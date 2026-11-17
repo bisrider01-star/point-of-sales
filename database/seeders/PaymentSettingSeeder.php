@@ -13,7 +13,7 @@ class PaymentSettingSeeder extends Seeder
     public function run(): void
     {
         PaymentSetting::firstOrCreate([], [
-            'default_gateway' => 'cash',
+            ...PaymentSetting::defaultAttributes(),
             'midtrans_enabled' => false,
             'xendit_enabled' => false,
             'xendit_callback_token' => null,

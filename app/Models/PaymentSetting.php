@@ -15,6 +15,8 @@ class PaymentSetting extends Model
 
     public const GATEWAY_BANK_TRANSFER = 'bank_transfer';
 
+    public const GATEWAY_QRIS_STATIC = 'qris_static';
+
     public const SECRET_FIELDS = [
         'midtrans_server_key',
         'xendit_secret_key',
@@ -24,7 +26,9 @@ class PaymentSetting extends Model
     protected $fillable = [
         'default_gateway',
         'outlet_id',
+        'cash_enabled',
         'bank_transfer_enabled',
+        'qris_static_enabled',
         'midtrans_enabled',
         'midtrans_server_key',
         'midtrans_client_key',
@@ -38,7 +42,9 @@ class PaymentSetting extends Model
 
     protected $casts = [
         'outlet_id' => 'integer',
+        'cash_enabled' => 'boolean',
         'bank_transfer_enabled' => 'boolean',
+        'qris_static_enabled' => 'boolean',
         'midtrans_enabled' => 'boolean',
         'midtrans_production' => 'boolean',
         'xendit_enabled' => 'boolean',
@@ -63,7 +69,7 @@ class PaymentSetting extends Model
     public static function forOutletOrCreate(?Outlet $outlet): self
     {
         if (! $outlet) {
-            return static::firstOrCreate([], ['default_gateway' => 'cash']);
+            return static::firstOrCreate([], self::defaultAttributes());
         }
 
         $scoped = static::where('outlet_id', $outlet->id)->first();
@@ -80,12 +86,28 @@ class PaymentSetting extends Model
             return $scoped;
         }
 
-        return static::create(['default_gateway' => 'cash', 'outlet_id' => $outlet->id]);
+        return static::create([...self::defaultAttributes(), 'outlet_id' => $outlet->id]);
+    }
+
+    public static function defaultAttributes(): array
+    {
+        return [
+            'default_gateway' => self::GATEWAY_QRIS_STATIC,
+            'qris_static_enabled' => true,
+        ];
     }
 
     public function enabledGateways(?Outlet $outlet = null): array
     {
         $gateways = [];
+
+        if ($this->isGatewayReady(self::GATEWAY_QRIS_STATIC)) {
+            $gateways[] = [
+                'value' => self::GATEWAY_QRIS_STATIC,
+                'label' => 'QRIS',
+                'description' => 'Pelanggan scan QRIS fisik, lalu kasir mengkonfirmasi pembayaran diterima.',
+            ];
+        }
 
         // Bank Transfer
         if ($this->isBankTransferReady($outlet)) {
@@ -116,6 +138,19 @@ class PaymentSetting extends Model
     }
 
     /**
+     * Cash stays enabled when the column has not been loaded yet (DB default true).
+     */
+    public function isCashEnabled(): bool
+    {
+        return $this->cash_enabled !== false;
+    }
+
+    public static function cashEnabledFor(?self $setting): bool
+    {
+        return $setting?->isCashEnabled() ?? true;
+    }
+
+    /**
      * Check if bank transfer is ready (enabled and has active bank accounts)
      */
     public function isBankTransferReady(?Outlet $outlet = null): bool
@@ -127,6 +162,7 @@ class PaymentSetting extends Model
     {
         return match ($gateway) {
             self::GATEWAY_BANK_TRANSFER => $this->isBankTransferReady(),
+            self::GATEWAY_QRIS_STATIC => (bool) $this->qris_static_enabled,
             self::GATEWAY_MIDTRANS => $this->midtrans_enabled
             && filled($this->resolvedSecret('midtrans_server_key'))
             && filled($this->midtrans_client_key),

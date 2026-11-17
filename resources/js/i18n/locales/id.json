@@ -272,6 +272,7 @@
             "discountApproval": "Approval Diskon",
             "stockOpname": "Stock Opname",
             "stockMutations": "Mutasi Stok",
+            "warehouseStocks": "Stok Gudang",
             "stockTransfers": "Transfer Stok",
             "purchaseOrders": "Purchase Order",
             "goodsReceiving": "Penerimaan Barang",

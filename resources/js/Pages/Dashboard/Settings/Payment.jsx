@@ -23,7 +23,10 @@ export default function Payment({
     const { can } = useAuthorization();
     const canUpdatePaymentSettings = can("payment-settings-update");
 
-    const { data, setData, put, errors, processing } = useForm({
+    const { data, setData, post, errors, processing } = useForm({
+        _method: "put",
+        cash_enabled: setting?.cash_enabled ?? true,
+        qris_static_enabled: setting?.qris_static_enabled ?? false,
         default_gateway: setting?.default_gateway ?? "cash",
         bank_transfer_enabled: setting?.bank_transfer_enabled ?? false,
         midtrans_enabled: setting?.midtrans_enabled ?? false,
@@ -44,11 +47,13 @@ export default function Payment({
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        put(route("settings.payments.update"), { preserveScroll: true });
+        post(route("settings.payments.update"), { preserveScroll: true, forceFormData: true });
     };
 
     const isGatewaySelectable = (gateway) => {
-        if (gateway === "cash") return true;
+        if (gateway === "cash") return data.cash_enabled;
+        if (gateway === "qris_static") return data.qris_static_enabled;
+        if (gateway === "bank_transfer") return data.bank_transfer_enabled;
         if (gateway === "midtrans") return data.midtrans_enabled;
         if (gateway === "xendit") return data.xendit_enabled;
         return false;
@@ -140,6 +145,22 @@ export default function Payment({
                             </small>
                         )}
                     </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                    <h3 className="font-semibold">Pembayaran Booth</h3>
+                    <label className="flex items-center gap-2">
+                        <Checkbox checked={data.cash_enabled} onChange={(e) => setData("cash_enabled", e.target.checked)} disabled={!canUpdatePaymentSettings} />
+                        Aktifkan Tunai
+                    </label>
+                    <p className="text-xs text-slate-500">Jika nonaktif, pembayaran tunai, split tunai, dan nota tempo ditolak.</p>
+                    {errors.cash_enabled && <p className="text-danger-500 text-sm">{errors.cash_enabled}</p>}
+                    <label className="flex items-center gap-2">
+                        <Checkbox checked={data.qris_static_enabled} onChange={(e) => setData("qris_static_enabled", e.target.checked)} disabled={!canUpdatePaymentSettings} />
+                        Aktifkan QRIS
+                    </label>
+                    <p className="text-xs text-slate-500">Gunakan QRIS fisik di meja kasir, tanpa unggah gambar. Close Order menyimpan pesanan pending; periksa dana masuk di bank/e-wallet sebelum konfirmasi pembayaran melalui Riwayat.</p>
+                    {errors.qris_static_enabled && <p className="text-danger-500 text-sm">{errors.qris_static_enabled}</p>}
                 </div>
 
                 {/* Bank Transfer */}

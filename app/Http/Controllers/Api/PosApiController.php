@@ -150,6 +150,7 @@ class PosApiController extends Controller
         $warehouseId = $shift?->warehouse_id;
 
         $products = Product::query()
+            ->where('is_sellable', true)
             ->with('category')
             ->when($warehouseId, function ($q) use ($warehouseId) {
                 $q->whereHas('warehouses', fn ($w) => $w->where('product_warehouse.warehouse_id', $warehouseId)
@@ -194,7 +195,8 @@ class PosApiController extends Controller
         $shift = $this->cashierShiftService->getActiveShiftForUser($request->user()->id);
         $warehouseId = $shift?->warehouse_id;
 
-        $product = Product::whereRaw('LOWER(barcode) = ?', [strtolower($validated['barcode'])])
+        $product = Product::where('is_sellable', true)
+            ->whereRaw('LOWER(barcode) = ?', [strtolower($validated['barcode'])])
             ->when($warehouseId, fn ($q) => $q->whereHas('warehouses', fn ($w) => $w->where('product_warehouse.warehouse_id', $warehouseId)))
             ->first();
 
@@ -286,6 +288,10 @@ class PosApiController extends Controller
 
         if (! $product) {
             return $this->notFound('Produk tidak ditemukan.');
+        }
+
+        if (! $product->is_sellable) {
+            return $this->error('Produk ini hanya untuk gudang dan tidak dapat dijual.', 422);
         }
 
         if ($product->is_composite) {
@@ -810,6 +816,12 @@ class PosApiController extends Controller
                     $this->deleteCarts($createdCartIds);
 
                     return ['status' => 'failed', 'reason' => "Produk #{$item['product_id']} tidak ditemukan."];
+                }
+
+                if (! $product->is_sellable) {
+                    $this->deleteCarts($createdCartIds);
+
+                    return ['status' => 'failed', 'reason' => "Produk {$product->title} hanya untuk gudang dan tidak dapat dijual."];
                 }
 
                 if ($product->is_composite) {

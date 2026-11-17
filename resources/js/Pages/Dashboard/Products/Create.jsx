@@ -36,6 +36,7 @@ export default function Create({ categories, products, units = [] }) {
         tax_type: "exclusive",
         tax_rate: "11",
         is_composite: false,
+        is_sellable: true,
         components: [],
         units: [],
     });
@@ -301,6 +302,22 @@ export default function Create({ categories, products, units = [] }) {
                                     <IconPackages size={16} />
                                     Produk Komposit (bundling /
                                     paket)
+                                </span>
+                            </label>
+                            <label className="flex items-start gap-2 mb-4 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={data.is_sellable}
+                                    onChange={(e) =>
+                                        setData("is_sellable", e.target.checked)
+                                    }
+                                    className="mt-0.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                />
+                                <span className="text-sm text-slate-700 dark:text-slate-300">
+                                    <span className="font-medium">Tampilkan di kasir</span>
+                                    <span className="block text-xs text-slate-500">
+                                        Matikan untuk bahan baku yang hanya disimpan di gudang.
+                                    </span>
                                 </span>
                             </label>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

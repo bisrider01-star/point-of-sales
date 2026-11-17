@@ -60,6 +60,8 @@ export default function Index({
     initialPricingPreview = { items: [], summary: {} },
     paymentGateways = [],
     defaultPaymentGateway = "cash",
+    cashEnabled = true,
+    qrisStaticEnabled = false,
     bankAccounts = [],
     warehouses = [],
     loyaltyTierOptions = [],
@@ -256,7 +258,8 @@ export default function Index({
         let cancelled = false;
         setIsLoadingPricing(true);
 
-        axios
+        // ponytail: debounce rapid cart taps into one pricing request
+        const timer = setTimeout(() => axios
             .post(route("transactions.pricing-preview"), {
                 customer_id: selectedCustomer?.id ?? null,
                 discount,
@@ -278,10 +281,11 @@ export default function Index({
                 if (!cancelled) {
                     setIsLoadingPricing(false);
                 }
-            });
+            }), 300);
 
         return () => {
             cancelled = true;
+            clearTimeout(timer);
         };
     }, [
         selectedCustomer?.id,
@@ -320,15 +324,18 @@ export default function Index({
               )
             : [];
 
-        return [
-            {
-                value: "cash",
-                label: "Tunai",
-                description: "Pembayaran tunai langsung di kasir.",
-            },
-            ...options,
-        ];
-    }, [paymentGateways]);
+        return cashEnabled
+            ? [
+                  {
+                      value: "cash",
+                      label: "Tunai",
+                      description: "Pembayaran tunai langsung di kasir.",
+                  },
+                  ...options,
+              ]
+            : options;
+    }, [paymentGateways, cashEnabled]);
+    const boothMode = qrisStaticEnabled && !cashEnabled;
 
     // Auto-set cash input for non-cash payment
     useEffect(() => {
@@ -619,8 +626,7 @@ export default function Index({
                     break;
                 case "F2":
                     e.preventDefault();
-                    if (carts.length > 0 && selectedCustomer)
-                        handleSubmitTransaction();
+                    if (carts.length > 0) handleSubmitTransaction();
                     break;
                 case "F3":
                     e.preventDefault();
@@ -642,7 +648,7 @@ export default function Index({
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [carts, selectedCustomer, mobileView, showShortcuts]);
+    }, [carts, selectedCustomer, mobileView, showShortcuts, paymentMethod, payLater, cash, payable, isSubmitting, isLoadingPricing, addingProductId, removingItemId, splitMode, splitTenders, dueDate]);
 
     // Handle remove from cart
     const handleRemoveFromCart = (cartId) => {
@@ -663,6 +669,15 @@ export default function Index({
 
     // Handle submit transaction
     const handleSubmitTransaction = () => {
+        if (isSubmitting || isLoadingPricing || addingProductId || updatingCartId || removingItemId) return;
+        if (!paymentMethod) {
+            toast.error("Belum ada metode pembayaran aktif");
+            return;
+        }
+        if (!navigator.onLine && paymentMethod === "qris_static") {
+            toast.error("QRIS Statis memerlukan koneksi online untuk konfirmasi pembayaran");
+            return;
+        }
         if (carts.length === 0) {
             toast.error("Keranjang masih kosong");
             return;
@@ -832,7 +847,9 @@ export default function Index({
                     setOrderType("in_store");
                     setOrderNote("");
                     setIsSubmitting(false);
-                    toast.success("Transaksi berhasil!");
+                    toast.success(paymentMethod === "qris_static" && !payLater && !splitMode
+                        ? "Order ditutup. Konfirmasi dana masuk melalui Riwayat."
+                        : "Transaksi berhasil!");
                 },
                 onError: () => {
                     setIsSubmitting(false);
@@ -1031,7 +1048,8 @@ export default function Index({
                     }`}
                     style={{ height: "calc(100vh - 4rem)" }}
                 >
-                    {/* Customer Select - Fixed */}
+                    {/* Customer Select - hidden in booth mode */}
+                    {!boothMode && (
                     <div
                         data-tour="pos-customer"
                         className="min-w-0 p-3 border-b border-slate-200 dark:border-slate-800 flex-shrink-0"
@@ -1046,6 +1064,7 @@ export default function Index({
                             tierOptions={loyaltyTierOptions}
                         />
                     </div>
+                    )}
 
                     {/* Held Transactions & Alerts */}
                     {heldCarts.length > 0 && (
@@ -1230,7 +1249,8 @@ export default function Index({
 
                         {/* Payment Details - Scrollable */}
                         <div data-tour="pos-payment" className="p-3 space-y-4">
-                            {/* Pay later toggle */}
+                            {/* Pay later toggle - requires cash/receivable flow */}
+                            {cashEnabled && (
                             <div className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                                 <div>
                                     <p className="text-sm font-semibold text-slate-800 dark:text-white">
@@ -1266,6 +1286,7 @@ export default function Index({
                                     </span>
                                 </label>
                             </div>
+                            )}
 
                             {payLater && (
                                 <div>
@@ -1443,7 +1464,12 @@ export default function Index({
                                         </button>
                                     ))}
                                 </div>
-                                {!payLater && (
+                                {paymentOptions.length === 0 && (
+                                    <p className="text-sm text-danger-500">
+                                        Belum ada metode pembayaran aktif. Hubungi admin.
+                                    </p>
+                                )}
+                                {!payLater && cashEnabled && (
                                     <button
                                         type="button"
                                         onClick={() => {
@@ -1507,7 +1533,7 @@ export default function Index({
                                                 <option value="">
                                                     Pilih metode...
                                                 </option>
-                                                {paymentOptions.map((option) => (
+                                                {paymentOptions.filter((option) => option.value !== "qris_static").map((option) => (
                                                     <option
                                                         key={option.value}
                                                         value={option.value}
@@ -1982,16 +2008,19 @@ export default function Index({
                             onClick={handleSubmitTransaction}
                             disabled={
                                 !carts.length ||
-                                !selectedCustomer ||
+                                !paymentMethod ||
                                 (!payLater &&
                                     paymentMethod === "cash" &&
                                     cash < payable) ||
                                 isLoadingPricing ||
+                                addingProductId !== null ||
+                                updatingCartId !== null ||
+                                removingItemId !== null ||
                                 isSubmitting
                             }
                             className={`w-full h-12 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
                                 carts.length &&
-                                selectedCustomer &&
+                                paymentMethod &&
                                 (paymentMethod !== "cash" || cash >= payable)
                                     && !isLoadingPricing
                                     ? "bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white shadow-lg shadow-primary-500/30"
@@ -2006,8 +2035,8 @@ export default function Index({
                                     <span>
                                         {!carts.length
                                             ? "Keranjang Kosong"
-                                            : !selectedCustomer
-                                            ? "Pilih Pelanggan"
+                                            : !paymentMethod
+                                            ? "Metode Pembayaran Belum Aktif"
                                             : paymentMethod === "cash" &&
                                               cash < payable
                                             ? `Kurang ${formatPrice(
@@ -2015,6 +2044,8 @@ export default function Index({
                                               )}`
                                             : isLoadingPricing
                                             ? "Menghitung Promo..."
+                                            : paymentMethod === "qris_static" && !payLater && !splitMode
+                                            ? "Close Order"
                                             : "Selesaikan Transaksi"}
                                     </span>
                                 </>

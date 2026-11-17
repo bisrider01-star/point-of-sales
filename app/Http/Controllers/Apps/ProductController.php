@@ -114,6 +114,7 @@ class ProductController extends Controller
             'tax_type' => $request->input('tax_type', 'exclusive'),
             'tax_rate' => $request->input('tax_rate', 11.00),
             'is_composite' => $request->boolean('is_composite'),
+            'is_sellable' => $request->boolean('is_sellable', true),
         ]);
 
         if ($request->boolean('is_composite')) {
@@ -237,6 +238,7 @@ class ProductController extends Controller
                 'tax_type' => $request->input('tax_type', 'exclusive'),
                 'tax_rate' => $request->input('tax_rate', 11.00),
                 'is_composite' => $request->boolean('is_composite'),
+                'is_sellable' => $request->boolean('is_sellable', true),
             ]);
 
             if ($request->boolean('is_composite')) {
@@ -264,6 +266,7 @@ class ProductController extends Controller
             'tax_type' => $request->input('tax_type', 'exclusive'),
             'tax_rate' => $request->input('tax_rate', 11.00),
             'is_composite' => $request->boolean('is_composite'),
+            'is_sellable' => $request->boolean('is_sellable', true),
         ]);
 
         if ($request->boolean('is_composite')) {
@@ -312,6 +315,7 @@ class ProductController extends Controller
     {
         return [
             'is_composite' => 'nullable|boolean',
+            'is_sellable' => 'nullable|boolean',
             'components' => 'exclude_unless:is_composite,1,true|required|array|min:1',
             'components.*.component_product_id' => 'required|integer|distinct|exists:products,id',
             'components.*.qty' => 'required|integer|min:1',

@@ -97,7 +97,7 @@ class TransactionController extends Controller
         $customers = Customer::latest()->get();
 
         // get products with stock > 0 in active warehouse
-        $products = Product::with(['category:id,name', 'units'])
+        $products = Product::with(['category:id,name', 'units'])->where('is_sellable', true)
             ->select('id', 'barcode', 'title', 'description', 'image', 'buy_price', 'sell_price', 'stock', 'category_id')
             ->when($warehouseId, function ($q) use ($warehouseId) {
                 $q->whereHas('warehouses', fn ($w) => $w->where('product_warehouse.warehouse_id', $warehouseId)
@@ -164,7 +164,12 @@ class TransactionController extends Controller
             'categories' => $categories,
             'initialPricingPreview' => $initialPricingPreview,
             'paymentGateways' => $paymentSetting?->enabledGateways($outlet) ?? [],
-            'defaultPaymentGateway' => $defaultGateway,
+            'defaultPaymentGateway' => PaymentSetting::cashEnabledFor($paymentSetting)
+                ? $defaultGateway
+                : (collect($paymentSetting?->enabledGateways($outlet) ?? [])->firstWhere('value', $defaultGateway)['value']
+                    ?? ($paymentSetting?->enabledGateways($outlet)[0]['value'] ?? '')),
+            'cashEnabled' => PaymentSetting::cashEnabledFor($paymentSetting),
+            'qrisStaticEnabled' => (bool) $paymentSetting?->isGatewayReady(PaymentSetting::GATEWAY_QRIS_STATIC),
             'bankAccounts' => $bankAccounts,
             'warehouses' => $this->outletAccessService->salesWarehousesFor(auth()->user())->values(),
             'shiftSummary' => $this->cashierShiftService->summarizeForDisplay($activeShift),
@@ -183,7 +188,7 @@ class TransactionController extends Controller
         $activeShift = $this->cashierShiftService->getActiveShiftForUser(auth()->user()->id);
         $warehouseId = $activeShift?->warehouse_id;
 
-        $product = Product::where('barcode', $request->barcode)
+        $product = Product::where('is_sellable', true)->where('barcode', $request->barcode)
             ->whereHas('warehouses', fn ($q) => $q->where('product_warehouse.warehouse_id', $warehouseId))
             ->first();
 
@@ -264,6 +269,10 @@ class TransactionController extends Controller
 
         if (! $product) {
             return redirect()->back()->with('error', 'Product not found.');
+        }
+
+        if (! $product->is_sellable) {
+            return back()->withErrors(['product_id' => 'Produk ini hanya untuk gudang dan tidak dapat dijual.']);
         }
 
         // ponytail: composite branch skips unit logic; null unit_id is fine for composite carts
@@ -711,7 +720,7 @@ class TransactionController extends Controller
                     ->route('transactions.print', $result->transaction->invoice)
                     ->with('error', $exception->getMessage());
             }
-        } elseif ($paymentGateway) {
+        } elseif ($paymentGateway && $paymentGateway !== PaymentSetting::GATEWAY_QRIS_STATIC) {
             try {
                 $paymentResponse = $paymentGateway === 'qris'
                     ? $paymentGatewayManager->createQrisPayment($result->transaction, $paymentSetting)
@@ -727,6 +736,11 @@ class TransactionController extends Controller
                     ->route('transactions.print', $result->transaction->invoice)
                     ->with('error', $exception->getMessage());
             }
+        }
+
+        if ($paymentGateway === PaymentSetting::GATEWAY_QRIS_STATIC) {
+            return to_route('transactions.history')
+                ->with('success', 'Order ditutup. Periksa dana masuk lalu konfirmasi pembayaran di Riwayat.');
         }
 
         return to_route('transactions.print', $result->transaction->invoice);
@@ -867,62 +881,72 @@ class TransactionController extends Controller
      */
     public function confirmPayment(Request $request, Transaction $transaction)
     {
-        $this->ensureTransactionAccess($request, $transaction);
-        if ($transaction->payment_status === 'paid') {
-            return redirect()
-                ->back()
-                ->with('error', 'Transaksi sudah dibayar.');
-        }
+        return DB::transaction(function () use ($request, $transaction) {
+            $transaction = Transaction::query()->lockForUpdate()->findOrFail($transaction->id);
+            $this->ensureTransactionAccess($request, $transaction);
+            if ($transaction->payment_status === 'paid') {
+                return redirect()
+                    ->back()
+                    ->with('error', 'Transaksi sudah dibayar.');
+            }
 
-        if ($transaction->payment_method !== 'bank_transfer') {
-            return redirect()
-                ->back()
-                ->with('error', 'Hanya transaksi transfer bank yang dapat dikonfirmasi pembayarannya.');
-        }
+            if (! in_array($transaction->payment_method, ['bank_transfer', 'qris_static'], true)) {
+                return redirect()
+                    ->back()
+                    ->with('error', 'Hanya transaksi transfer bank atau QRIS Statis yang dapat dikonfirmasi pembayarannya.');
+            }
 
-        if (! $transaction->bank_account_id) {
-            return redirect()
-                ->back()
-                ->with('error', 'Transaksi transfer bank belum memiliki rekening tujuan.');
-        }
+            if ($transaction->payment_method === 'bank_transfer' && ! $transaction->bank_account_id) {
+                return redirect()
+                    ->back()
+                    ->with('error', 'Transaksi transfer bank belum memiliki rekening tujuan.');
+            }
 
-        if (! in_array($transaction->payment_status, ['pending', 'pending_approval'], true)) {
-            return redirect()
-                ->back()
-                ->with('error', 'Status transaksi tidak dapat dikonfirmasi saat ini.');
-        }
+            if (! in_array($transaction->payment_status, ['pending', 'pending_approval'], true)) {
+                return redirect()
+                    ->back()
+                    ->with('error', 'Status transaksi tidak dapat dikonfirmasi saat ini.');
+            }
 
-        $beforeStatus = $transaction->payment_status;
-        $transaction->update([
-            'payment_status' => 'paid',
-        ]);
+            if ($transaction->discount_approval_status === 'pending') {
+                return back()->with('error', 'Diskon harus disetujui supervisor sebelum konfirmasi pembayaran.');
+            }
 
-        $this->auditLogService->log(
-            event: 'transaction.payment_confirmed',
-            module: 'transactions',
-            auditable: $transaction,
-            description: "Pembayaran untuk invoice {$transaction->invoice} dikonfirmasi.",
-            before: [
-                'invoice' => $transaction->invoice,
-                'payment_method' => $transaction->payment_method,
-                'payment_status' => $beforeStatus,
-                'bank_account_id' => $transaction->bank_account_id,
-            ],
-            after: [
-                'invoice' => $transaction->invoice,
-                'payment_method' => $transaction->payment_method,
+            $beforeStatus = $transaction->payment_status;
+            $transaction->tenders()->where('method', $transaction->payment_method)
+                ->where('payment_status', 'pending')
+                ->update(['payment_status' => 'paid', 'paid_at' => now()]);
+            $transaction->update([
                 'payment_status' => 'paid',
-                'bank_account_id' => $transaction->bank_account_id,
-            ],
-            meta: [
-                'invoice' => $transaction->invoice,
-                'bank_account_id' => $transaction->bank_account_id,
-            ],
-        );
+            ]);
 
-        return redirect()
-            ->back()
-            ->with('success', "Pembayaran untuk invoice {$transaction->invoice} berhasil dikonfirmasi.");
+            $this->auditLogService->log(
+                event: 'transaction.payment_confirmed',
+                module: 'transactions',
+                auditable: $transaction,
+                description: "Pembayaran untuk invoice {$transaction->invoice} dikonfirmasi.",
+                before: [
+                    'invoice' => $transaction->invoice,
+                    'payment_method' => $transaction->payment_method,
+                    'payment_status' => $beforeStatus,
+                    'bank_account_id' => $transaction->bank_account_id,
+                ],
+                after: [
+                    'invoice' => $transaction->invoice,
+                    'payment_method' => $transaction->payment_method,
+                    'payment_status' => 'paid',
+                    'bank_account_id' => $transaction->bank_account_id,
+                ],
+                meta: [
+                    'invoice' => $transaction->invoice,
+                    'bank_account_id' => $transaction->bank_account_id,
+                ],
+            );
+
+            return redirect()
+                ->back()
+                ->with('success', "Pembayaran untuk invoice {$transaction->invoice} berhasil dikonfirmasi.");
+        });
     }
 
     private function ensureTransactionAccess(Request $request, Transaction $transaction): void

@@ -272,6 +272,7 @@
             "discountApproval": "Discount Approval",
             "stockOpname": "Stock Opname",
             "stockMutations": "Stock Mutations",
+            "warehouseStocks": "Warehouse Stock",
             "stockTransfers": "Stock Transfers",
             "purchaseOrders": "Purchase Orders",
             "goodsReceiving": "Goods Receiving",

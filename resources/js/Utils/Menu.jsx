@@ -152,6 +152,13 @@ export default function Menu() {
             title: t("sidebar.sections.inventory"),
             details: [
                 {
+                    title: t("sidebar.items.warehouseStocks"),
+                    href: route("warehouse-stocks.index"),
+                    active: url.startsWith("/dashboard/warehouse-stocks"),
+                    icon: <IconBuildingWarehouse size={20} strokeWidth={1.5} />,
+                    permissions: hasAnyPermission(["products-access"]),
+                },
+                {
                     title: t("sidebar.items.stockOpname"),
                     href: route("stock-opnames.index"),
                     active: url.startsWith("/dashboard/stock-opnames"),

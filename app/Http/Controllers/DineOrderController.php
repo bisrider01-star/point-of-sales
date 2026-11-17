@@ -37,6 +37,7 @@ class DineOrderController extends Controller
         $productIds = $items->pluck('product_id')->toArray();
 
         $productModels = Product::with('components')
+            ->where('is_sellable', true)
             ->whereIn('id', $productIds)
             ->get()
             ->keyBy('id');

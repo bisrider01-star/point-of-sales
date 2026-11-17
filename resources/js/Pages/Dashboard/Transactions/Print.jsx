@@ -30,9 +30,15 @@ export default function Print({ transaction }) {
         transaction?.payment_status || "pending"
     );
     const canConfirmPayment = can("transactions-confirm-payment");
+    useEffect(() => {
+        setLiveStatus(transaction?.payment_status || "pending");
+    }, [transaction?.payment_status]);
 
     const showQris =
         Boolean(transaction?.qr_string) && liveStatus === "pending";
+    const showStaticQris =
+        transaction?.payment_method === "qris_static" &&
+        ["pending", "pending_approval"].includes(liveStatus);
 
     // Poll QRIS payment status every 4s while pending
     useEffect(() => {
@@ -116,6 +122,7 @@ export default function Print({ transaction }) {
         midtrans: "Midtrans",
         xendit: "Xendit",
         qris: "QRIS",
+        qris_static: "QRIS Statis",
         split: "Split Pembayaran",
         pay_later: "Piutang",
     };
@@ -129,6 +136,7 @@ export default function Print({ transaction }) {
         midtrans: "Midtrans",
         xendit: "Xendit",
         qris: "QRIS",
+        qris_static: "QRIS Statis",
     };
 
     const paymentStatuses = {
@@ -263,7 +271,7 @@ export default function Print({ transaction }) {
         if (!printerSettings?.autoPrint) return;
         if (!hasCachedPrinter()) return;
         if (!transaction?.details?.length) return;
-        if (showQris) return; // wait for payment confirmation first
+        if (showQris || showStaticQris) return; // wait for payment confirmation first
         (async () => {
             try {
                 await printReceipt(receiptData, printerSettings.paperSize);
@@ -437,8 +445,26 @@ export default function Print({ transaction }) {
                                 Share
                             </button>
 
-                            {/* Confirm Payment Button - Only for pending bank_transfer */}
-                            {paymentMethodKey === "bank_transfer" &&
+                            {showStaticQris && (
+                                <div className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-primary-200 dark:border-primary-800 bg-primary-50/60 dark:bg-primary-950/30 w-full sm:w-auto print:hidden">
+                                    <p className="text-sm font-semibold text-primary-700 dark:text-primary-300">
+                                        Pembayaran menggunakan QRIS fisik di meja kasir.
+                                    </p>
+                                    <p className="text-lg font-bold text-primary-700 dark:text-primary-300">
+                                        {formatPrice(transaction.grand_total)}
+                                    </p>
+                                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                                        <span className="w-2 h-2 rounded-full bg-warning-500 animate-pulse" />
+                                        Menunggu Pembayaran
+                                    </span>
+                                    <p className="text-[11px] text-slate-500 text-center max-w-64">
+                                        Periksa dana masuk di aplikasi bank/e-wallet sebelum konfirmasi.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Confirm Payment Button - pending bank_transfer / qris_static */}
+                            {["bank_transfer", "qris_static"].includes(paymentMethodKey) &&
                                 paymentStatusKey === "pending" &&
                                 canConfirmPayment && (
                                     <button
@@ -448,7 +474,9 @@ export default function Print({ transaction }) {
                                         className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-success-500 hover:bg-success-600 text-sm font-semibold text-white transition-colors w-full sm:w-auto"
                                     >
                                         <IconCheck size={18} />
-                                        Konfirmasi Bayar
+                                        {paymentMethodKey === "qris_static"
+                                            ? "Konfirmasi Pembayaran Diterima"
+                                            : "Konfirmasi Bayar"}
                                     </button>
                                 )}
 

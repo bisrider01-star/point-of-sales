@@ -34,6 +34,10 @@ const formatCurrency = (value = 0) =>
         minimumFractionDigits: 0,
     }).format(value);
 
+const isManualConfirmable = (transaction) =>
+    ["bank_transfer", "qris_static"].includes(transaction?.payment_method) &&
+    transaction?.payment_status === "pending";
+
 const History = ({ transactions, filters, warehouses = [] }) => {
     const { can } = useAuthorization();
     const canCreateSalesReturn = can("sales-returns-create");
@@ -319,8 +323,7 @@ const History = ({ transactions, filters, warehouses = [] }) => {
                                                         <IconCheck size={12} />
                                                         Lunas
                                                     </span>
-                                                ) : transaction.payment_status ===
-                                                      "pending" &&
+                                                ) : isManualConfirmable(transaction) &&
                                                   canConfirmPayment ? (
                                                     <button
                                                         onClick={() =>
@@ -329,9 +332,10 @@ const History = ({ transactions, filters, warehouses = [] }) => {
                                                                 transaction,
                                                             })
                                                         }
-                                                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400 rounded-full hover:bg-warning-200 dark:hover:bg-warning-900/50 transition-colors"
+                                                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-success-500 text-white rounded-full hover:bg-success-600 transition-colors"
                                                     >
-                                                        Pending - Konfirmasi
+                                                        <IconCheck size={12} />
+                                                        Konfirmasi Pembayaran
                                                     </button>
                                                 ) : (
                                                     <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-danger-100 dark:bg-danger-900/30 text-danger-700 dark:text-danger-400 rounded-full">
@@ -445,8 +449,7 @@ const History = ({ transactions, filters, warehouses = [] }) => {
                                                         <IconCheck size={12} />
                                                         Lunas
                                                     </span>
-                                                ) : transaction.payment_status ===
-                                                      "pending" &&
+                                                ) : isManualConfirmable(transaction) &&
                                                   canConfirmPayment ? (
                                                     <button
                                                         onClick={() =>
@@ -455,9 +458,10 @@ const History = ({ transactions, filters, warehouses = [] }) => {
                                                                 transaction,
                                                             })
                                                         }
-                                                        className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-400 rounded-full"
+                                                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-success-500 text-white rounded-full hover:bg-success-600 transition-colors"
                                                     >
-                                                        Pending
+                                                        <IconCheck size={12} />
+                                                        Konfirmasi Pembayaran
                                                     </button>
                                                 ) : (
                                                     <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-danger-100 dark:bg-danger-900/30 text-danger-700 dark:text-danger-400 rounded-full">
@@ -629,7 +633,9 @@ const History = ({ transactions, filters, warehouses = [] }) => {
                                         Konfirmasi Pembayaran
                                     </h3>
                                     <p className="text-sm opacity-90">
-                                        Transfer Bank
+                                        {confirmModal.transaction.payment_method === "qris_static"
+                                            ? "QRIS"
+                                            : "Transfer Bank"}
                                     </p>
                                 </div>
                             </div>

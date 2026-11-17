@@ -21,7 +21,7 @@ class ExpirePendingTransactionsCommand extends Command
         $cutoff = now()->subHours($hours);
 
         $transactions = Transaction::query()
-            ->whereIn('payment_method', ['midtrans', 'xendit', 'qris', 'bank_transfer'])
+            ->whereIn('payment_method', ['midtrans', 'xendit', 'qris', 'qris_static', 'bank_transfer'])
             ->where('payment_status', 'pending')
             ->where('created_at', '<', $cutoff)
             ->with(['details.product.components', 'details.batchAllocations'])

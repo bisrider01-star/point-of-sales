@@ -30,6 +30,7 @@ class DineMenuController extends Controller
             ->get();
 
         $products = Product::where('is_active', true)
+            ->where('is_sellable', true)
             ->where(function ($query) use ($outlet) {
                 $query->where('stock', '>', 0);
                 if ($outlet) {

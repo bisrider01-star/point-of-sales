@@ -34,6 +34,7 @@ use App\Http\Controllers\Apps\SupplierReturnController;
 use App\Http\Controllers\Apps\TransactionController;
 use App\Http\Controllers\Apps\UnitController;
 use App\Http\Controllers\Apps\WarehouseController;
+use App\Http\Controllers\Apps\WarehouseStockController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DineMenuController;
 use App\Http\Controllers\DineOrderController;
@@ -166,6 +167,7 @@ Route::group(['prefix' => 'dashboard', 'middleware' => ['auth']], function () {
     Route::patch('stock-opnames/{stockOpname}/items/{item}', [StockOpnameController::class, 'updateItem'])->middleware('permission:stock-opnames-create')->name('stock-opnames.items.update');
     Route::post('stock-opnames/{stockOpname}/finalize', [StockOpnameController::class, 'finalize'])->middleware('permission:stock-opnames-finalize')->name('stock-opnames.finalize');
     Route::get('stock-mutations', [StockMutationController::class, 'index'])->middleware('permission:stock-mutations-access')->name('stock-mutations.index');
+    Route::get('warehouse-stocks', [WarehouseStockController::class, 'index'])->middleware('permission:products-access')->name('warehouse-stocks.index');
     Route::get('audit-logs', [AuditLogController::class, 'index'])->middleware('permission:audit-logs-access')->name('audit-logs.index');
     Route::get('audit-logs/{auditLog}', [AuditLogController::class, 'show'])->middleware('permission:audit-logs-access')->name('audit-logs.show');
     Route::get('cashier-shifts', [CashierShiftController::class, 'index'])->middleware('permission:cashier-shifts-access')->name('cashier-shifts.index');

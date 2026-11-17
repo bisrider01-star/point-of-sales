@@ -11,7 +11,10 @@ class Product extends Model
 {
     use HasFactory;
 
+    protected $attributes = ['is_sellable' => true];
+
     protected $casts = [
+        'is_sellable' => 'boolean',
         'id' => 'integer',
         'category_id' => 'integer',
         'created_at' => 'datetime',
@@ -26,6 +29,7 @@ class Product extends Model
     ];
 
     protected $fillable = [
+        'is_sellable',
         'image',
         'barcode',
         'sku',

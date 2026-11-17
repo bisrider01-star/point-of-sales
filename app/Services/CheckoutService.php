@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Cart;
+use App\Models\PaymentSetting;
 use App\Models\Product;
 use App\Models\ProductBatch;
 use App\Models\ProductWarehouse;
@@ -36,6 +37,19 @@ class CheckoutService
                 lockForUpdate: true,
             );
 
+            $setting = PaymentSetting::forOutlet($ctx->outlet);
+            $hasCashTender = collect($ctx->tenderInput)->contains(fn ($tender) => strtolower((string) ($tender['method'] ?? '')) === 'cash');
+            if (! PaymentSetting::cashEnabledFor($setting) && ($ctx->isCashPayment || $ctx->isPayLater || ($ctx->useTenders && $hasCashTender))) {
+                throw ValidationException::withMessages([
+                    'payment_gateway' => 'Pembayaran tunai dan nota tempo dinonaktifkan oleh admin.',
+                ]);
+            }
+            if ($ctx->paymentGateway === PaymentSetting::GATEWAY_QRIS_STATIC && ! $setting?->isGatewayReady(PaymentSetting::GATEWAY_QRIS_STATIC)) {
+                throw ValidationException::withMessages([
+                    'payment_gateway' => 'QRIS Statis belum dikonfigurasi.',
+                ]);
+            }
+
             $carts = Cart::with('product')
                 ->where('cashier_id', $ctx->userId)
                 ->active()
@@ -44,6 +58,14 @@ class CheckoutService
 
             if ($carts->isEmpty()) {
                 abort(422, 'Keranjang kosong.');
+            }
+
+            foreach ($carts as $cart) {
+                if (! $cart->product?->is_sellable) {
+                    throw ValidationException::withMessages([
+                        'product_id' => 'Produk gudang saja tidak dapat dijual. Hapus produk tersebut dari keranjang.',
+                    ]);
+                }
             }
 
             $pricingPreview = $this->pricingService->previewCart($carts, $ctx->customer, null, $ctx->outlet);
@@ -119,6 +141,12 @@ class CheckoutService
 
             if ($ctx->useTenders) {
                 $transaction->tenders()->createMany($tenders);
+            } elseif ($ctx->paymentGateway === PaymentSetting::GATEWAY_QRIS_STATIC) {
+                $transaction->tenders()->create([
+                    'method' => PaymentSetting::GATEWAY_QRIS_STATIC,
+                    'amount' => $grandTotal,
+                    'payment_status' => 'pending',
+                ]);
             }
 
             $this->processCartItems($transaction, $carts, $pricingPreview, $ctx->outlet, $subtotalAfterPromo, $appliedManualDiscount, $activeShift->warehouse_id, $ctx->userId);

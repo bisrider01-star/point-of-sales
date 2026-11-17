@@ -91,6 +91,13 @@ function ProductCard({
                             Komposit
                         </span>
                     )}
+                    <span
+                        className={`px-2 py-1 text-xs font-semibold text-white rounded-full ${
+                            product.is_sellable ? "bg-success-500" : "bg-warning-500"
+                        }`}
+                    >
+                        {product.is_sellable ? "Kasir" : "Gudang saja"}
+                    </span>
                     {outOfStock ? (
                         <span className="px-2 py-1 text-xs font-semibold bg-danger-500 text-white rounded-full">
                             Habis
@@ -440,6 +447,15 @@ export default function Index({ products }) {
                                                 <div>
                                                     <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
                                                         {product.title}
+                                                        <span
+                                                            className={`ml-2 rounded-full px-2 py-0.5 text-xs font-medium ${
+                                                                product.is_sellable
+                                                                    ? "bg-success-100 text-success-700 dark:bg-success-900/40 dark:text-success-300"
+                                                                    : "bg-warning-100 text-warning-700 dark:bg-warning-900/40 dark:text-warning-300"
+                                                            }`}
+                                                        >
+                                                            {product.is_sellable ? "Kasir" : "Gudang saja"}
+                                                        </span>
                                                     </p>
                                                     <div className="text-xs text-slate-500 dark:text-slate-400 space-y-0.5">
                                                         {product.barcode && (
