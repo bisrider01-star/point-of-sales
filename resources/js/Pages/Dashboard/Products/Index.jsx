@@ -196,6 +196,8 @@ export default function Index({ products }) {
     const [showBarcodeModal, setShowBarcodeModal] = useState(false);
     const [singleProductBarcode, setSingleProductBarcode] = useState(null);
     const [selectedProducts, setSelectedProducts] = useState([]);
+    const { flash, errors } = usePage().props;
+    const [importing, setImporting] = useState(false);
     const canCreateProducts = can("products-create");
     const canEditProducts = can("products-edit");
     const canDeleteProducts = can("products-delete");
@@ -243,6 +245,9 @@ export default function Index({ products }) {
     return (
         <>
             <Head title="Produk" />
+            {can("products-import") && <p className="mb-2 text-sm text-slate-500">Import menggunakan barcode untuk memperbarui produk. Kolom stok tidak mengubah saldo gudang.</p>}
+            {errors?.file && <p role="alert" className="mb-4 text-sm text-danger-600">{errors.file}</p>}
+            {flash?.success && <p role="status" className="mb-4 text-sm text-success-600">{flash.success}</p>}
 
             {/* Header */}
             <div data-tour="products-header" className="mb-6">
@@ -266,7 +271,7 @@ export default function Index({ products }) {
                             <IconBarcode size={18} />
                             Cetak All Barcode
                         </button>
-                        {canCreateProducts && (
+                        {can("products-export") && (
                             <>
                                 <a
                                     href={route("export.products")}
@@ -275,13 +280,19 @@ export default function Index({ products }) {
                                     <IconDownload size={18} />
                                     Export
                                 </a>
+                            </>
+                        )}
+                        {can("products-import") && (
+                            <>
+                                <a className="text-sm self-center underline" href={route("import.template", "products")}>Template Excel</a>
                                 <button
                                     type="button"
+                                    disabled={importing}
                                     onClick={() => document.getElementById("import-products-input")?.click()}
                                     className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors w-full sm:w-auto"
                                 >
                                     <IconUpload size={18} />
-                                    Import
+                                    {importing ? "Mengimpor?" : "Import"}
                                 </button>
                                 <input
                                     id="import-products-input"
@@ -290,7 +301,11 @@ export default function Index({ products }) {
                                     className="hidden"
                                     onChange={function(e) {
                                         const file = e.target.files && e.target.files[0];
-                                        if (file) router.post(route("import.products"), { file });
+                                        e.target.value = "";
+                                        if (file) router.post(route("import.products"), { file }, {
+                                            onStart: () => setImporting(true),
+                                            onFinish: () => setImporting(false),
+                                        });
                                     }}
                                 />
                             </>

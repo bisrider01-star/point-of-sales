@@ -39,6 +39,7 @@ class ProductController extends Controller
 
         return Inertia::render('Dashboard/Products/Index', [
             'products' => $products,
+            'flash' => ['success' => session('success')],
             'warehouses' => $warehouses,
         ]);
     }

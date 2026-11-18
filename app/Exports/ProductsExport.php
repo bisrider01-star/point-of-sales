@@ -17,7 +17,7 @@ class ProductsExport implements FromCollection, ShouldAutoSize, WithHeadings, Wi
 
     public function headings(): array
     {
-        return ['Barcode', 'SKU', 'Nama', 'Kategori', 'Harga Beli', 'Harga Jual', 'Stok', 'Min Stok', 'Max Stok', 'Tipe Pajak', 'Tarif Pajak'];
+        return ['Barcode', 'SKU', 'Nama', 'Kategori', 'Harga Beli', 'Harga Jual', 'Stok', 'Min Stok', 'Max Stok', 'Tipe Pajak', 'Tarif Pajak', 'Deskripsi', 'Jenis Produk'];
     }
 
     public function map($product): array
@@ -34,6 +34,8 @@ class ProductsExport implements FromCollection, ShouldAutoSize, WithHeadings, Wi
             (int) ($product->max_stock ?? 0),
             $product->tax_type ?? 'exclusive',
             (float) ($product->tax_rate ?? 11.00),
+            $product->description,
+            $product->is_sellable ? 'Kasir' : 'Gudang saja',
         ];
     }
 }

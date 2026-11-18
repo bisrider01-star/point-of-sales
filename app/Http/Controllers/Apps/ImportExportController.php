@@ -11,9 +11,11 @@ use App\Imports\ProductsImport;
 use App\Models\Outlet;
 use App\Services\OutletAccessService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Concerns\FromArray;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Facades\Excel;
+use Maatwebsite\Excel\Validators\ValidationException;
 
 class ImportExportController extends Controller
 {
@@ -46,9 +48,19 @@ class ImportExportController extends Controller
         ]);
 
         $import = new ProductsImport;
-        Excel::import($import, $request->file('file'));
+        try {
+            DB::transaction(fn () => Excel::import($import, $request->file('file')));
+        } catch (ValidationException $exception) {
+            $failure = $exception->failures()[0];
+
+            return back()->withErrors(['file' => 'Baris '.$failure->row().': '.implode(' ', $failure->errors())]);
+        }
 
         $successCount = $import->getRowCount();
+
+        if ($successCount === 0) {
+            return back()->withErrors(['file' => 'File tidak berisi baris produk.']);
+        }
 
         return back()->with('success', "Import selesai. {$successCount} produk diimport.");
     }
@@ -68,7 +80,7 @@ class ImportExportController extends Controller
     public function downloadTemplate(string $type)
     {
         $headings = match ($type) {
-            'products' => ['barcode', 'sku', 'nama', 'deskripsi', 'kategori', 'harga_beli', 'harga_jual', 'stok', 'min_stok', 'max_stok', 'tipe_pajak', 'tarif_pajak'],
+            'products' => ['barcode', 'sku', 'nama', 'deskripsi', 'kategori', 'harga_beli', 'harga_jual', 'stok', 'min_stok', 'max_stok', 'tipe_pajak', 'tarif_pajak', 'jenis_produk'],
             'customers' => ['nama', 'telepon', 'alamat'],
             default => abort(404),
         };
