@@ -17,6 +17,7 @@ use App\Services\LoyaltyService;
 use App\Services\OutletAccessService;
 use App\Services\PricingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -367,6 +368,14 @@ class PricingRuleController extends Controller
             && (float) ($validated['discount_value'] ?? 0) > 100
         ) {
             $request->validate(['discount_value' => ['max:100']]);
+        }
+
+        // The form sends absolute ISO instants (e.g. "...T05:00:00.000Z"); store them in the app timezone,
+        // otherwise Eloquent would persist the UTC wall-clock time verbatim.
+        foreach (['starts_at', 'ends_at'] as $field) {
+            if (! empty($validated[$field])) {
+                $validated[$field] = Carbon::parse($validated[$field])->setTimezone(config('app.timezone'));
+            }
         }
 
         $validated['is_active'] = (bool) ($validated['is_active'] ?? false);

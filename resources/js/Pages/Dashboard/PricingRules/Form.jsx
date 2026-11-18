@@ -52,6 +52,31 @@ function CardSection({ title, description, children }) {
     );
 }
 
+// datetime-local works in the browser's local time (e.g. WIB) and carries no offset.
+// Show stored instants as local wall-clock time...
+const toLocalInput = (value) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+};
+
+// ...and send them back as absolute ISO instants so the server timezone can't shift them.
+const withAbsoluteSchedule = (formData) => {
+    const toIso = (value) => {
+        const date = value ? new Date(value) : null;
+        return date && !Number.isNaN(date.getTime()) ? date.toISOString() : value;
+    };
+
+    return {
+        ...formData,
+        starts_at: toIso(formData.starts_at),
+        ends_at: toIso(formData.ends_at),
+    };
+};
+
 export default function Form({
     mode = "create",
     rule = null,
@@ -61,7 +86,7 @@ export default function Form({
     kindOptions = [],
 }) {
     const isEdit = mode === "edit";
-    const { data, setData, post, put, processing, errors } = useForm({
+    const { data, setData, post, put, processing, errors, transform } = useForm({
         name: rule?.name ?? "",
         kind: rule?.kind ?? "standard_discount",
         is_active: Boolean(rule?.is_active ?? true),
@@ -77,12 +102,8 @@ export default function Form({
                 ? String(rule.discount_value)
                 : "",
         preview_quantity_multiplier: String(rule?.preview_quantity_multiplier ?? 1),
-        starts_at: rule?.starts_at
-            ? new Date(rule.starts_at).toISOString().slice(0, 16)
-            : "",
-        ends_at: rule?.ends_at
-            ? new Date(rule.ends_at).toISOString().slice(0, 16)
-            : "",
+        starts_at: toLocalInput(rule?.starts_at),
+        ends_at: toLocalInput(rule?.ends_at),
         notes: rule?.notes ?? "",
         qty_breaks: rule?.qty_breaks?.length
             ? rule.qty_breaks.map((item) => ({
@@ -118,6 +139,8 @@ export default function Form({
         loading: false,
         data: null,
     });
+
+    transform(withAbsoluteSchedule);
 
     const submit = (event) => {
         event.preventDefault();
@@ -160,7 +183,10 @@ export default function Form({
         setPreviewState({ loading: true, data: null });
 
         try {
-            const response = await axios.post(route("pricing-rules.preview"), data);
+            const response = await axios.post(
+                route("pricing-rules.preview"),
+                withAbsoluteSchedule(data)
+            );
             setPreviewState({ loading: false, data: response.data?.data ?? null });
         } catch {
             setPreviewState({ loading: false, data: null });

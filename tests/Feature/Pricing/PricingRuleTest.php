@@ -11,6 +11,7 @@ use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
@@ -452,6 +453,40 @@ class PricingRuleTest extends TestCase
         $rule = PricingRule::where('name', 'Beli 1 Gratis 1')->firstOrFail();
         $this->assertSame(0.0, $rule->discount_value);
         $this->assertSame(2, $rule->buyGetItems()->count());
+    }
+
+    public function test_schedule_sent_as_utc_instant_is_active_inside_local_window(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access', 'pricing-rules-create']);
+        $product = $this->createProduct('Gelato Coklat');
+
+        // Browser in WIB picks 12:00-12:59 today; the form converts it to UTC instants (05:00Z-05:59Z).
+        $this->travelTo(Carbon::parse('2026-11-18 05:52:00', 'UTC'));
+
+        foreach (['UTC', 'Asia/Jakarta'] as $timezone) {
+            config(['app.timezone' => $timezone]);
+            date_default_timezone_set($timezone);
+
+            $this->actingAs($user)
+                ->post(route('pricing-rules.store'), $this->formPayload([
+                    'name' => 'Happy Hour '.$timezone,
+                    'target_type' => 'product',
+                    'product_id' => (string) $product->id,
+                    'discount_type' => 'fixed_price',
+                    'discount_value' => '4000',
+                    'starts_at' => '2026-11-18T05:00:00.000Z',
+                    'ends_at' => '2026-11-18T05:59:00.000Z',
+                ]))
+                ->assertRedirect(route('pricing-rules.index'));
+
+            $rule = PricingRule::where('name', 'Happy Hour '.$timezone)->firstOrFail();
+
+            $this->assertSame('2026-11-18T05:00:00+00:00', $rule->starts_at->utc()->toIso8601String(), $timezone);
+            $this->assertSame('active', $rule->currentStatusLabel(), $timezone);
+        }
+
+        config(['app.timezone' => 'UTC']);
+        date_default_timezone_set('UTC');
     }
 
     public function test_draft_preview_applies_category_fixed_price_to_each_sample_product(): void
