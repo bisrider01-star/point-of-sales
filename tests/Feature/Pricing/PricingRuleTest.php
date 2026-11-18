@@ -10,6 +10,7 @@ use App\Models\PricingRule;
 use App\Models\Product;
 use App\Models\Transaction;
 use App\Models\User;
+use App\Services\PricingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -550,6 +551,82 @@ class PricingRuleTest extends TestCase
             ->assertSessionHasErrors('bundle_items.1.product_id');
 
         $this->assertDatabaseMissing('pricing_rules', ['name' => 'Bundle Tidak Lengkap']);
+    }
+
+    public function test_mix_match_bundles_pool_quantities_and_follow_priority(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access', 'pricing-rules-create']);
+        $user->markEmailAsVerified();
+        $products = collect(range(1, 5))->map(function (int $index) {
+            $product = $this->createProduct('Porsi '.$index);
+            $product->update(['sell_price' => 39000]);
+
+            return $product;
+        });
+        $bundleItems = $products->take(4)->map(fn (Product $product) => ['product_id' => $product->id])->all();
+
+        foreach ([2 => 75000, 3 => 109000] as $qty => $price) {
+            $payload = $this->formPayload([
+                'name' => 'Mix & Match '.$qty,
+                'kind' => PricingRule::KIND_BUNDLE_PRICE,
+                'discount_type' => PricingRule::TYPE_FIXED_PRICE,
+                'discount_value' => $price,
+                'priority' => $qty * 100,
+                'mix_match_total_qty' => $qty,
+                'bundle_items' => $bundleItems,
+            ]);
+            $this->actingAs($user)->post(route('pricing-rules.store'), $payload)
+                ->assertSessionHasNoErrors()->assertRedirect(route('pricing-rules.index'));
+            $this->postJson(route('pricing-rules.preview'), $payload)
+                ->assertOk()->assertJsonPath('data.summary.subtotal_after_promo', $price);
+        }
+
+        $scenarios = [
+            [[1], 39000, 0],
+            [[2], 75000, 1],
+            [[1, 1], 75000, 1],
+            [[3], 109000, 1],
+            [[1, 1, 1], 109000, 1],
+            [[1, 1, 1, 1], 148000, 1],
+            [[2, 1, 1, 1], 184000, 2],
+            [[2, 2, 1, 1], 218000, 2],
+            [[1, 0, 0, 0, 1], 78000, 0],
+        ];
+
+        foreach ($scenarios as [$quantities, $total, $groups]) {
+            $carts = collect($quantities)->filter()->map(function (int $qty, int $index) use ($products) {
+                $cart = new Cart(['product_id' => $products[$index]->id, 'qty' => $qty, 'price' => $qty * 39000]);
+                $cart->id = $index + 1;
+                $cart->setRelation('product', $products[$index]);
+
+                return $cart;
+            });
+            $preview = app(PricingService::class)->previewCart($carts);
+            $this->assertSame($total, $preview['summary']['subtotal_after_promo']);
+            $this->assertSame($total, array_sum(array_column($preview['items'], 'line_total')));
+            $this->assertCount($groups, $preview['applied_groups']);
+        }
+    }
+
+    public function test_bundle_preview_accepts_create_form_defaults(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access']);
+        $productA = $this->createProduct('Preview Default A');
+        $productB = $this->createProduct('Preview Default B');
+
+        $this->actingAs($user)
+            ->postJson(route('pricing-rules.preview'), $this->formPayload([
+                'name' => '',
+                'kind' => PricingRule::KIND_BUNDLE_PRICE,
+                'discount_value' => '75000',
+                'mix_match_total_qty' => '2',
+                'bundle_items' => [
+                    ['product_id' => (string) $productA->id, 'quantity' => '1', 'sort_order' => '0'],
+                    ['product_id' => (string) $productB->id, 'quantity' => '1', 'sort_order' => '1'],
+                ],
+            ]))
+            ->assertOk()
+            ->assertJsonPath('data.summary.subtotal_after_promo', 75000);
     }
 
     /**

@@ -50,6 +50,7 @@ class PricingRule extends Model
         'eligible_loyalty_tiers',
         'discount_type',
         'discount_value',
+        'mix_match_total_qty',
         'starts_at',
         'ends_at',
         'preview_quantity_multiplier',
@@ -66,6 +67,7 @@ class PricingRule extends Model
         'category_id' => 'integer',
         'eligible_loyalty_tiers' => 'array',
         'discount_value' => 'float',
+        'mix_match_total_qty' => 'integer',
         'created_by' => 'integer',
         'preview_quantity_multiplier' => 'integer',
         'starts_at' => 'datetime',
@@ -108,6 +110,11 @@ class PricingRule extends Model
             ->orderBy('role')
             ->orderBy('sort_order')
             ->orderBy('id');
+    }
+
+    public function isMixMatch(): bool
+    {
+        return $this->kind === self::KIND_BUNDLE_PRICE && (int) $this->mix_match_total_qty > 0;
     }
 
     public function isScheduled(): bool

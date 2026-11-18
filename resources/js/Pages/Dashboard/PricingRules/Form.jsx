@@ -113,6 +113,7 @@ export default function Form({
                   sort_order: String(item.sort_order ?? 0),
               }))
             : [{ min_qty: "3", discount_type: "fixed_price", discount_value: "", sort_order: "0" }],
+        mix_match_total_qty: String(rule?.mix_match_total_qty ?? ""),
         bundle_items: rule?.bundle_items?.length
             ? rule.bundle_items.map((item) => ({
                   product_id: String(item.product_id),
@@ -135,6 +136,7 @@ export default function Form({
                   { product_id: "", role: "get", quantity: "1", sort_order: "1" },
               ],
     });
+    const [mixMatch, setMixMatch] = useState(rule?.mix_match_total_qty != null);
     const [previewState, setPreviewState] = useState({
         loading: false,
         data: null,
@@ -180,16 +182,23 @@ export default function Form({
     const errorMessages = [...new Set(Object.values(errors))];
 
     const runPreview = async () => {
-        setPreviewState({ loading: true, data: null });
+        setPreviewState({ loading: true, data: null, error: null });
 
         try {
             const response = await axios.post(
                 route("pricing-rules.preview"),
                 withAbsoluteSchedule(data)
             );
-            setPreviewState({ loading: false, data: response.data?.data ?? null });
-        } catch {
-            setPreviewState({ loading: false, data: null });
+            setPreviewState({ loading: false, data: response.data?.data ?? null, error: null });
+        } catch (error) {
+            const validationErrors = Object.values(error.response?.data?.errors ?? {}).flat();
+            setPreviewState({
+                loading: false,
+                data: null,
+                error: validationErrors.length
+                    ? validationErrors.join(" ")
+                    : error.response?.data?.message ?? "Preview gagal dimuat. Coba lagi.",
+            });
         }
     };
 
@@ -563,6 +572,33 @@ export default function Form({
                             title="Bundle Price"
                             description="Pilih kombinasi produk dan harga paket final."
                         >
+                            <label className="mb-4 flex items-center gap-2 text-sm">
+                                <input
+                                    type="checkbox"
+                                    checked={mixMatch}
+                                    onChange={(event) => {
+                                        setMixMatch(event.target.checked);
+                                        setData("mix_match_total_qty", event.target.checked ? "2" : "");
+                                    }}
+                                />
+                                Bebas pilih (Mix & Match)
+                            </label>
+                            {mixMatch && (
+                                <div className="mb-4">
+                                    <label className="block text-sm" htmlFor="mix-match-qty">Jumlah porsi per paket</label>
+                                    <input
+                                        id="mix-match-qty"
+                                        type="number"
+                                        min="2"
+                                        required
+                                        value={data.mix_match_total_qty}
+                                        onChange={(event) => setData("mix_match_total_qty", event.target.value)}
+                                        className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm dark:border-slate-700 dark:bg-slate-800"
+                                    />
+                                    <InputError message={errors.mix_match_total_qty} />
+                                    <p className="mt-2 text-sm text-slate-500">Pilih produk yang boleh masuk paket. Produk yang sama boleh dipilih pembeli lebih dari sekali.</p>
+                                </div>
+                            )}
                             <div className="mb-4">
                                 <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
                                     Harga Bundle
@@ -582,7 +618,7 @@ export default function Form({
                                 {data.bundle_items.map((row, index) => (
                                     <div
                                         key={`bundle-item-${index}`}
-                                        className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_160px_48px] dark:border-slate-700 dark:bg-slate-800"
+                                        className={`grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800 ${mixMatch ? "md:grid-cols-[1fr_48px]" : "md:grid-cols-[1fr_160px_48px]"}`}
                                     >
                                         <select
                                             value={row.product_id}
@@ -603,21 +639,23 @@ export default function Form({
                                                 </option>
                                             ))}
                                         </select>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            value={row.quantity}
-                                            onChange={(event) =>
-                                                updateArrayRow(
-                                                    "bundle_items",
-                                                    index,
-                                                    "quantity",
-                                                    event.target.value
-                                                )
-                                            }
-                                            className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                                            placeholder="Qty"
-                                        />
+                                        {!mixMatch && (
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={row.quantity}
+                                                onChange={(event) =>
+                                                    updateArrayRow(
+                                                        "bundle_items",
+                                                        index,
+                                                        "quantity",
+                                                        event.target.value
+                                                    )
+                                                }
+                                                className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                                                placeholder="Qty"
+                                            />
+                                        )}
                                         <button
                                             type="button"
                                             onClick={() => removeRow("bundle_items", index)}
@@ -815,6 +853,12 @@ export default function Form({
                                     : "Jalankan Preview"}
                             </button>
                         </div>
+
+                        {previewState.error && (
+                            <p className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600 dark:border-rose-900/50 dark:bg-rose-950/40">
+                                {previewState.error}
+                            </p>
+                        )}
 
                         {previewState.data && (
                             <div className="space-y-4">

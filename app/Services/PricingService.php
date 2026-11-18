@@ -163,7 +163,9 @@ class PricingService
     {
         return match ($rule->kind) {
             PricingRule::KIND_QTY_BREAK => 'Grosir '.$this->standardDiscountLabel($rule),
-            PricingRule::KIND_BUNDLE_PRICE => 'Bundle Rp '.number_format((float) $rule->discount_value, 0, ',', '.'),
+            PricingRule::KIND_BUNDLE_PRICE => $rule->isMixMatch()
+                ? 'Mix & Match '.(int) $rule->mix_match_total_qty.' item Rp '.number_format((float) $rule->discount_value, 0, ',', '.')
+                : 'Bundle Rp '.number_format((float) $rule->discount_value, 0, ',', '.'),
             PricingRule::KIND_BUY_X_GET_Y => 'Buy X Get Y',
             default => $this->standardDiscountLabel($rule),
         };
@@ -359,7 +361,14 @@ class PricingService
         $baseTotal = 0;
         $tempRemaining = $remainingQuantities;
 
-        foreach ($rule->bundleItems as $bundleItem) {
+        if ($rule->isMixMatch()) {
+            $participants = $this->consumeMixMatchItems($rule, $items, $tempRemaining);
+            if ($participants === null) {
+                return null;
+            }
+        }
+
+        foreach ($rule->isMixMatch() ? [] : $rule->bundleItems as $bundleItem) {
             $matched = $this->consumeMatchingItems(
                 $items,
                 $tempRemaining,
@@ -504,6 +513,25 @@ class PricingService
         }
 
         return $required === 0 ? $matches : null;
+    }
+
+    /**
+     * Fill one Mix & Match package from eligible products, priciest lines first
+     * to maximize the discount for this package.
+     */
+    private function consumeMixMatchItems(PricingRule $rule, Collection $items, array &$remainingQuantities): ?array
+    {
+        $eligibleProductIds = $rule->bundleItems->pluck('product_id')->map(fn ($id) => (int) $id)->all();
+        $eligibleItems = $items
+            ->filter(fn (array $item) => in_array((int) $item['product_id'], $eligibleProductIds, true))
+            ->sortByDesc('base_unit_price');
+
+        return $this->consumeMatchingItems(
+            $eligibleItems,
+            $remainingQuantities,
+            fn () => true,
+            (int) $rule->mix_match_total_qty
+        );
     }
 
     private function allocateDiscount(array $participants, int $discountTotal): array
@@ -666,7 +694,7 @@ class PricingService
 
     private function ruleTouchesProduct(PricingRule $rule, Product $product): bool
     {
-        if ($this->matchesTarget($rule, $product)) {
+        if (! $rule->isMixMatch() && $this->matchesTarget($rule, $product)) {
             return true;
         }
 

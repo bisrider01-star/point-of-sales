@@ -63,5 +63,8 @@ Engine promo dan loyalty untuk meningkatkan penjualan dan retensi pelanggan.
 
 - Pricing rules bisa tumpang tindih — rule dengan priority lebih tinggi diutamakan
 - Qty break: tier price berdasarkan quantity pembelian produk tertentu
-- Bundle: harga spesial untuk set produk yang sudah ditentukan
+- Bundle tetap: harga spesial untuk komposisi dan jumlah per produk yang sudah ditentukan.
+- **Bundle Mix & Match:** pilih **Bundle Price → Bebas pilih (Mix & Match)**, isi jumlah porsi dan harga paket, lalu pilih produk yang boleh masuk paket. Kuantitas dijumlahkan lintas produk, termasuk beberapa porsi dari produk yang sama.
+  - Untuk 2 porsi Rp75.000 dan 3 porsi Rp109.000, buat dua rule dengan daftar produk yang sama. Beri paket 3 prioritas lebih tinggi agar dipakai dulu. Contoh: 5 porsi menjadi paket 3 + paket 2 (Rp184.000).
+  - Sistem memilih porsi dengan harga dasar tertinggi terlebih dahulu untuk mengisi masing-masing paket. Unit yang tersisa tetap bisa mengikuti aturan promo lain. Bundle tidak diterapkan jika harga paket tidak lebih murah dari harga dasar porsi yang dipilih.
 - Buy X Get Y: buy item A → dapat diskon untuk item B

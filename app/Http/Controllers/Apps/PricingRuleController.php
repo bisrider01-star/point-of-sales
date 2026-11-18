@@ -234,6 +234,11 @@ class PricingRuleController extends Controller
 
     public function preview(Request $request)
     {
+        // A draft can be previewed before it has a name; the name is only required when saving.
+        if (blank($request->input('name'))) {
+            $request->merge(['name' => 'Preview Draft']);
+        }
+
         $validated = $this->validateRule($request);
         $rule = new PricingRule($validated['rule']);
         $rule->setRelation('qtyBreaks', collect($validated['relations']['qty_breaks'])->map(fn (array $break) => new PricingRuleQtyBreak($break)));
@@ -269,6 +274,8 @@ class PricingRuleController extends Controller
     private function validateRule(Request $request): array
     {
         $onlyFor = fn (string $kind) => 'exclude_unless:kind,'.$kind;
+
+        $mixMatch = $request->input('kind') === PricingRule::KIND_BUNDLE_PRICE && $request->filled('mix_match_total_qty');
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
@@ -316,9 +323,10 @@ class PricingRuleController extends Controller
             ])],
             'qty_breaks.*.discount_value' => [$onlyFor(PricingRule::KIND_QTY_BREAK), 'required_with:qty_breaks', 'numeric', 'min:0.01'],
             'qty_breaks.*.sort_order' => [$onlyFor(PricingRule::KIND_QTY_BREAK), 'nullable', 'integer', 'min:0'],
+            'mix_match_total_qty' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), 'nullable', 'integer', 'min:2', 'max:65535'],
             'bundle_items' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), 'nullable', 'array'],
             'bundle_items.*.product_id' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), 'required_with:bundle_items', 'integer', 'exists:products,id'],
-            'bundle_items.*.quantity' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), 'required_with:bundle_items', 'integer', 'min:1'],
+            'bundle_items.*.quantity' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), $mixMatch ? 'exclude' : 'required_with:bundle_items', 'integer', 'min:1'],
             'bundle_items.*.sort_order' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), 'nullable', 'integer', 'min:0'],
             'buy_get_items' => [$onlyFor(PricingRule::KIND_BUY_X_GET_Y), 'nullable', 'array'],
             'buy_get_items.*.product_id' => [$onlyFor(PricingRule::KIND_BUY_X_GET_Y), 'required_with:buy_get_items', 'integer', 'exists:products,id'],
@@ -342,8 +350,8 @@ class PricingRuleController extends Controller
             $request->validate(['qty_breaks' => ['required', 'array', 'min:1']]);
         }
 
-        if ($validated['kind'] === PricingRule::KIND_BUNDLE_PRICE && count($validated['bundle_items'] ?? []) < 2) {
-            $request->validate(['bundle_items' => ['required', 'array', 'min:2']]);
+        if ($validated['kind'] === PricingRule::KIND_BUNDLE_PRICE && count($validated['bundle_items'] ?? []) < ($mixMatch ? 1 : 2)) {
+            $request->validate(['bundle_items' => ['required', 'array', $mixMatch ? 'min:1' : 'min:2']]);
         }
 
         if ($validated['kind'] === PricingRule::KIND_BUY_X_GET_Y) {
@@ -364,7 +372,8 @@ class PricingRuleController extends Controller
         }
 
         if (
-            $validated['discount_type'] === PricingRule::TYPE_PERCENTAGE
+            $validated['kind'] !== PricingRule::KIND_BUNDLE_PRICE
+            && $validated['discount_type'] === PricingRule::TYPE_PERCENTAGE
             && (float) ($validated['discount_value'] ?? 0) > 100
         ) {
             $request->validate(['discount_value' => ['max:100']]);
@@ -378,6 +387,7 @@ class PricingRuleController extends Controller
             }
         }
 
+        $validated['mix_match_total_qty'] = $validated['mix_match_total_qty'] ?? null;
         $validated['is_active'] = (bool) ($validated['is_active'] ?? false);
         $validated['eligible_loyalty_tiers'] = $validated['customer_scope'] === PricingRule::SCOPE_MEMBER
             ? array_values(array_unique($validated['eligible_loyalty_tiers'] ?? []))
@@ -400,7 +410,7 @@ class PricingRuleController extends Controller
         $validated['bundle_items'] = collect($validated['bundle_items'] ?? [])
             ->map(fn (array $item, int $index) => [
                 'product_id' => (int) $item['product_id'],
-                'quantity' => (int) $item['quantity'],
+                'quantity' => $mixMatch ? 1 : (int) $item['quantity'],
                 'sort_order' => (int) ($item['sort_order'] ?? $index),
             ])
             ->values()
@@ -438,6 +448,7 @@ class PricingRuleController extends Controller
                     'eligible_loyalty_tiers',
                     'discount_type',
                     'discount_value',
+                    'mix_match_total_qty',
                     'preview_quantity_multiplier',
                     'starts_at',
                     'ends_at',
@@ -484,6 +495,7 @@ class PricingRuleController extends Controller
             'eligible_loyalty_tiers' => $rule->eligible_loyalty_tiers,
             'discount_type' => $rule->discount_type,
             'discount_value' => (float) $rule->discount_value,
+            'mix_match_total_qty' => $rule->mix_match_total_qty,
             'preview_quantity_multiplier' => (int) $rule->preview_quantity_multiplier,
             'starts_at' => optional($rule->starts_at)?->toIso8601String(),
             'ends_at' => optional($rule->ends_at)?->toIso8601String(),
@@ -514,10 +526,17 @@ class PricingRuleController extends Controller
             default => Product::query()->orderBy('title')->limit(3)->get(),
         };
 
-        return $products
-            ->values()
-            ->map(function (Product $product, int $index) use ($rule) {
-                $qty = $this->previewQuantityForRule($rule, $product);
+        if ($rule->isMixMatch()) {
+            $products = $products->sortBy('id')->take((int) $rule->mix_match_total_qty)->values();
+        }
+
+        $previewProducts = $products->values();
+
+        return $previewProducts
+            ->map(function (Product $product, int $index) use ($rule, $previewProducts) {
+                $qty = $rule->isMixMatch()
+                    ? 1 + ($index === 0 ? max(0, (int) $rule->mix_match_total_qty - $previewProducts->count()) : 0)
+                    : $this->previewQuantityForRule($rule, $product);
                 $cart = new Cart([
                     'product_id' => $product->id,
                     'qty' => $qty,
