@@ -510,11 +510,12 @@ class PricingRuleController extends Controller
             ->map(function (Product $product, int $index) use ($rule) {
                 $qty = $this->previewQuantityForRule($rule, $product);
                 $cart = new Cart([
-                    'id' => -($index + 1),
                     'product_id' => $product->id,
                     'qty' => $qty,
                     'price' => (int) $product->sell_price * $qty,
                 ]);
+                // id is not fillable; the pricing engine keys lines by cart id, so set it explicitly.
+                $cart->id = -($index + 1);
                 $cart->setRelation('product', $product);
 
                 return $cart;

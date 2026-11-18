@@ -454,6 +454,29 @@ class PricingRuleTest extends TestCase
         $this->assertSame(2, $rule->buyGetItems()->count());
     }
 
+    public function test_draft_preview_applies_category_fixed_price_to_each_sample_product(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access']);
+        $first = $this->createProduct('Gelato Coklat');
+        $second = $this->createProduct('Gelato Vanila');
+        $second->update(['category_id' => $first->category_id]);
+
+        $response = $this->actingAs($user)
+            ->postJson(route('pricing-rules.preview'), $this->formPayload([
+                'name' => 'Happy Hour',
+                'target_type' => 'category',
+                'category_id' => (string) $first->category_id,
+                'discount_type' => 'fixed_price',
+                'discount_value' => '4000',
+            ]));
+
+        $response->assertOk();
+        $this->assertCount(2, $response->json('data.items'));
+        $this->assertSame(120000, $response->json('data.summary.base_subtotal'));
+        $this->assertSame(112000, $response->json('data.summary.promo_discount_total'));
+        $this->assertSame(8000, $response->json('data.summary.subtotal_after_promo'));
+    }
+
     public function test_bundle_with_only_one_product_is_rejected(): void
     {
         $user = $this->createUserWithPermissions(['pricing-rules-access', 'pricing-rules-create']);
