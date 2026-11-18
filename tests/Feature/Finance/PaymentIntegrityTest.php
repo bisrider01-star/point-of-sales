@@ -181,6 +181,29 @@ class PaymentIntegrityTest extends TestCase
         ]);
     }
 
+    public function test_payable_qris_payment_settles_remaining_without_entering_amount(): void
+    {
+        $payable = $this->makePayable(100000);
+        $this->post(route('payables.pay', $payable), $this->payPayablePayload(25000))
+            ->assertSessionHas('success');
+
+        $payload = ['paid_at' => now()->toDateString(), 'method' => 'qris'];
+        $this->post(route('payables.pay', $payable), $payload)
+            ->assertRedirect(route('payables.show', $payable))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('payable_payments', [
+            'payable_id' => $payable->id,
+            'amount' => 75000,
+            'method' => 'qris',
+            'bank_account_id' => null,
+        ]);
+        $this->assertSame('paid', $payable->fresh()->status);
+
+        $this->post(route('payables.pay', $payable), $payload)->assertSessionHasErrors('amount');
+        $this->assertDatabaseCount('payable_payments', 2);
+    }
+
     public function test_payable_partial_pay_sets_partial_status(): void
     {
         $payable = $this->makePayable(100000);

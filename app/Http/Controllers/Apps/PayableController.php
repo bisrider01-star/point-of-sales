@@ -167,7 +167,7 @@ class PayableController extends Controller
     {
         $this->ensureAccess($payable);
         $validated = $request->validate([
-            'amount' => ['required', 'numeric', 'min:1'],
+            'amount' => ['exclude_if:method,qris', 'required', 'numeric', 'min:1'],
             'paid_at' => ['required', 'date'],
             'method' => ['required', 'string', 'max:30'],
             'bank_account_id' => ['nullable', 'exists:bank_accounts,id'],
@@ -179,7 +179,8 @@ class PayableController extends Controller
             $payable = Payable::whereKey($payable->id)->lockForUpdate()->firstOrFail();
 
             $remaining = $payable->remaining;
-            if ($validated['amount'] > $remaining) {
+            $amount = $validated['method'] === 'qris' ? $remaining : $validated['amount'];
+            if ($amount <= 0 || $amount > $remaining) {
                 throw ValidationException::withMessages([
                     'amount' => 'Nominal melebihi sisa hutang.',
                 ]);
@@ -197,14 +198,14 @@ class PayableController extends Controller
             PayablePayment::create([
                 'payable_id' => $payable->id,
                 'paid_at' => $validated['paid_at'],
-                'amount' => $validated['amount'],
+                'amount' => $amount,
                 'method' => $validated['method'],
                 'bank_account_id' => $validated['bank_account_id'] ?? null,
                 'note' => $validated['note'] ?? null,
                 'user_id' => $request->user()->id,
             ]);
 
-            $payable->paid = ($payable->paid ?? 0) + $validated['amount'];
+            $payable->paid = ($payable->paid ?? 0) + $amount;
             $remaining = max(0, ($payable->total ?? 0) - ($payable->paid ?? 0));
             $payable->status = $remaining <= 0 ? 'paid' : 'partial';
             if ($payable->status !== 'paid' && $payable->due_date && now()->gt($payable->due_date)) {

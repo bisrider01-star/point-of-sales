@@ -37,7 +37,7 @@ export default function PayableShow({ payable, bankAccounts = [] }) {
     const { data, setData, post, processing, reset, errors } = useForm({
         amount: "",
         paid_at: new Date().toISOString().slice(0, 10),
-        method: "cash",
+        method: "qris",
         bank_account_id: "",
         note: "",
     });
@@ -237,14 +237,20 @@ export default function PayableShow({ payable, bankAccounts = [] }) {
                                     <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
                                         Nominal
                                     </label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={data.amount}
-                                        onChange={(e) => setData("amount", e.target.value)}
-                                        className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
-                                        required
-                                    />
+                                    {data.method === "qris" ? (
+                                        <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                            {formatCurrency(payable.remaining)} (pelunasan)
+                                        </p>
+                                    ) : (
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            value={data.amount}
+                                            onChange={(e) => setData("amount", e.target.value)}
+                                            className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                            required
+                                        />
+                                    )}
                                     {errors.amount && (
                                         <p className="text-xs text-danger-500 mt-1">
                                             {errors.amount}
@@ -263,10 +269,23 @@ export default function PayableShow({ payable, bankAccounts = [] }) {
                                         required
                                     />
                                 </div>
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="grid grid-cols-3 gap-2">
                                     <button
                                         type="button"
-                                        onClick={() => setData("method", "cash")}
+                                        onClick={() => setData((current) => ({ ...current, method: "qris", bank_account_id: "" }))}
+                                        aria-pressed={data.method === "qris"}
+                                        className={`h-11 rounded-xl border-2 text-sm font-semibold ${
+                                            data.method === "qris"
+                                                ? "border-primary-500 bg-primary-50 text-primary-700"
+                                                : "border-slate-200 dark:border-slate-700"
+                                        }`}
+                                    >
+                                        QRIS
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setData((current) => ({ ...current, method: "cash", bank_account_id: "" }))}
+                                        aria-pressed={data.method === "cash"}
                                         className={`h-11 rounded-xl border-2 flex items-center justify-center gap-2 text-sm font-semibold ${
                                             data.method === "cash"
                                                 ? "border-primary-500 bg-primary-50 text-primary-700"
@@ -279,6 +298,7 @@ export default function PayableShow({ payable, bankAccounts = [] }) {
                                     <button
                                         type="button"
                                         onClick={() => setData("method", "bank_transfer")}
+                                        aria-pressed={data.method === "bank_transfer"}
                                         className={`h-11 rounded-xl border-2 flex items-center justify-center gap-2 text-sm font-semibold ${
                                             data.method === "bank_transfer"
                                                 ? "border-primary-500 bg-primary-50 text-primary-700"
