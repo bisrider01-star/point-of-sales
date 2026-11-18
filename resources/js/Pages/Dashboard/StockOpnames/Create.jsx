@@ -56,6 +56,8 @@ export default function Create({ warehouses = [] }) {
                                 </option>
                             ))}
                         </select>
+                        {errors.warehouse_id && <p className="mt-1 text-sm text-red-600">{errors.warehouse_id}</p>}
+                        {warehouses.length === 0 && <p className="mt-1 text-sm text-red-600">Tidak ada gudang aktif yang bisa diakses.</p>}
                     </div>
 
                     <Textarea
@@ -73,7 +75,7 @@ export default function Create({ warehouses = [] }) {
                             icon={<IconClipboardCheck size={18} />}
                             className="bg-primary-500 hover:bg-primary-600 text-white shadow-lg shadow-primary-500/30"
                             label={processing ? "Menyimpan..." : "Buat Sesi"}
-                            disabled={processing}
+                            disabled={processing || !data.warehouse_id}
                         />
                     </div>
                 </div>

@@ -54,7 +54,11 @@ export default function Show({
     const canFinalizeStockOpname = can("stock-opnames-finalize");
     const isDraft = stockOpname.status === "draft";
     const canManageDraft = isDraft && canEditStockOpname;
-    const [localItems, setLocalItems] = useState(stockOpname.items);
+    const [itemEdits, setItemEdits] = useState({});
+    const localItems = useMemo(
+        () => stockOpname.items.map((item) => ({ ...item, ...itemEdits[item.id] })),
+        [stockOpname.items, itemEdits]
+    );
     const [savingItemId, setSavingItemId] = useState(null);
     const [showProductModal, setShowProductModal] = useState(false);
     const [productSearchInput, setProductSearchInput] = useState(
@@ -66,9 +70,8 @@ export default function Show({
     });
 
     useEffect(() => {
-        setLocalItems(stockOpname.items);
         notesForm.setData("notes", stockOpname.notes || "");
-    }, [stockOpname.items, stockOpname.notes]);
+    }, [stockOpname.notes]);
 
     useEffect(() => {
         setProductSearchInput(productFilters.search || "");
@@ -168,38 +171,16 @@ export default function Show({
     };
 
     const setItemField = (itemId, key, value) => {
-        setLocalItems((currentItems) =>
-            currentItems.map((item) => {
-                if (item.id !== itemId) {
-                    return item;
-                }
-
-                const nextPhysicalStock =
-                    key === "physical_stock"
-                        ? value === ""
-                            ? null
-                            : Number(value)
-                        : item.physical_stock;
-
-                const nextDifference =
-                    nextPhysicalStock === null
-                        ? null
-                        : nextPhysicalStock - Number(item.system_stock);
-
-                return {
-                    ...item,
-                    [key]: value,
-                    physical_stock: nextPhysicalStock,
-                    difference: nextDifference,
-                    adjustment_reason:
-                        nextDifference === 0
-                            ? ""
-                            : key === "adjustment_reason"
-                              ? value
-                              : item.adjustment_reason,
-                };
-            })
-        );
+        setItemEdits((current) => {
+            const item = { ...stockOpname.items.find((row) => row.id === itemId), ...current[itemId] };
+            const physical_stock = key === "physical_stock" ? (value === "" ? null : Number(value)) : item.physical_stock;
+            const difference = physical_stock === null ? null : physical_stock - item.system_stock;
+            return { ...current, [itemId]: {
+                physical_stock,
+                difference,
+                adjustment_reason: difference === 0 ? "" : key === "adjustment_reason" ? value : item.adjustment_reason,
+            } };
+        });
     };
 
     const persistItem = (item) => {
@@ -218,8 +199,8 @@ export default function Show({
             },
             {
                 preserveScroll: true,
-                onSuccess: () => toast.success("Item opname diperbarui"),
-                onError: () => toast.error("Gagal memperbarui item opname"),
+                onSuccess: () => { setItemEdits(({ [item.id]: saved, ...rest }) => rest); toast.success("Item opname diperbarui"); },
+                onError: (errors) => toast.error(Object.values(errors)[0] || "Gagal memperbarui item opname"),
                 onFinish: () => setSavingItemId(null),
             }
         );
@@ -232,8 +213,7 @@ export default function Show({
             {
                 preserveScroll: true,
                 onSuccess: () => toast.success("Stock opname difinalisasi"),
-                onError: () =>
-                    toast.error("Gagal finalize. Periksa item yang belum valid."),
+                onError: (errors) => toast.error(Object.values(errors)[0] || "Gagal finalisasi."),
             }
         );
     };
@@ -287,7 +267,7 @@ export default function Show({
                             label="Finalize Stock Opname"
                             onClick={finalize}
                             disabled={
-                                localItems.length === 0 || summary.hasMissingReasons
+                                localItems.length === 0 || summary.hasMissingReasons || localItems.some((item) => item.physical_stock === null) || Object.keys(itemEdits).length > 0 || savingItemId !== null
                             }
                         />
                     )}
@@ -377,7 +357,7 @@ export default function Show({
                                                         type="number"
                                                         min="0"
                                                         value={item.physical_stock ?? ""}
-                                                        disabled={!canManageDraft}
+                                                        disabled={!canManageDraft || savingItemId === item.id}
                                                         onChange={(event) =>
                                                             setItemField(
                                                                 item.id,
@@ -409,7 +389,7 @@ export default function Show({
                                                     <input
                                                         type="text"
                                                         value={item.adjustment_reason || ""}
-                                                        disabled={!canManageDraft}
+                                                        disabled={!canManageDraft || savingItemId === item.id}
                                                         onChange={(event) =>
                                                             setItemField(
                                                                 item.id,
@@ -430,7 +410,7 @@ export default function Show({
                                                         <button
                                                             type="button"
                                                             onClick={() => persistItem(item)}
-                                                            disabled={savingItemId === item.id}
+                                                            disabled={savingItemId !== null}
                                                             className="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-2 text-slate-600 transition hover:border-primary-300 hover:text-primary-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-primary-700 dark:hover:text-primary-400"
                                                         >
                                                             <IconDeviceFloppy size={18} />
@@ -562,7 +542,7 @@ export default function Show({
                                                 {product.category?.name || "-"} • {product.barcode || product.sku || "-"}
                                             </p>
                                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                                Stok sistem: {product.stock}
+                                                Stok sistem: {stockOpname.warehouse_id ? product.warehouse_stock : product.stock}
                                             </p>
                                         </div>
                                         <span className="inline-flex rounded-lg bg-primary-500 px-3 py-2 text-xs font-semibold text-white">

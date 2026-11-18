@@ -217,24 +217,27 @@ class StockOpnameController extends Controller
     public function finalize(Request $request, StockOpname $stockOpname): RedirectResponse
     {
         $this->ensureWarehouseAccess($request->user(), $stockOpname->warehouse_id);
-        $this->ensureDraft($stockOpname);
-
-        $stockOpname->load('items.product');
-        $beforeStatus = $stockOpname->status;
-
-        foreach ($stockOpname->items as $item) {
-            if ($item->difference !== null && $item->difference !== 0 && blank($item->adjustment_reason)) {
-                throw ValidationException::withMessages([
-                    'finalize' => 'Masih ada item selisih yang belum memiliki alasan adjustment.',
-                ]);
-            }
-        }
 
         DB::transaction(function () use ($request, $stockOpname) {
+            $stockOpname = StockOpname::query()->lockForUpdate()->findOrFail($stockOpname->id);
+            $this->ensureDraft($stockOpname);
+            $stockOpname->load('items');
+
+            if ($stockOpname->items->isEmpty() || $stockOpname->items->contains(fn (StockOpnameItem $item) => $item->physical_stock === null)) {
+                throw ValidationException::withMessages([
+                    'finalize' => 'Tambahkan produk dan simpan stok fisik semua item sebelum finalisasi.',
+                ]);
+            }
+
             foreach ($stockOpname->items as $item) {
-                if ($item->physical_stock === null) {
-                    continue;
+                if ($item->difference !== 0 && blank($item->adjustment_reason)) {
+                    throw ValidationException::withMessages([
+                        'finalize' => 'Masih ada item selisih yang belum memiliki alasan adjustment.',
+                    ]);
                 }
+            }
+
+            foreach ($stockOpname->items as $item) {
 
                 $product = $item->product()->lockForUpdate()->first();
 
@@ -289,7 +292,7 @@ class StockOpnameController extends Controller
             module: 'stock',
             auditable: $stockOpname,
             description: 'Stock opname difinalisasi.',
-            before: ['status' => $beforeStatus],
+            before: ['status' => 'draft'],
             after: ['status' => $stockOpname->status],
             meta: [
                 'code' => $stockOpname->code,

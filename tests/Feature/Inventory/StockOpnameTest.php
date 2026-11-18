@@ -45,11 +45,14 @@ class StockOpnameTest extends TestCase
             'stock-opnames-create',
         ]);
 
-        $response = $this
-            ->actingAs($user)
-            ->post(route('stock-opnames.store'), [
-                'notes' => 'Opname bulanan gudang depan',
-            ]);
+        $user->markEmailAsVerified();
+        $warehouse = Warehouse::create(['code' => 'OP-CREATE', 'name' => 'Gudang Opname']);
+        $this->actingAs($user)->post(route('stock-opnames.store'))->assertInvalid(['warehouse_id']);
+
+        $response = $this->post(route('stock-opnames.store'), [
+            'notes' => 'Opname bulanan gudang depan',
+            'warehouse_id' => $warehouse->id,
+        ]);
 
         $stockOpname = StockOpname::first();
 
@@ -176,6 +179,29 @@ class StockOpnameTest extends TestCase
             'stock_after' => 8,
             'warehouse_id' => $warehouse->id,
         ]);
+    }
+
+    public function test_finalize_rejects_empty_session_and_uncounted_items(): void
+    {
+        $user = $this->createUserWithPermissions(['stock-opnames-create', 'stock-opnames-finalize']);
+        $user->markEmailAsVerified();
+        $stockOpname = StockOpname::create(['code' => 'SO-INCOMPLETE', 'status' => 'draft']);
+        $product = $this->createProduct();
+        $finalize = route('stock-opnames.finalize', $stockOpname);
+
+        $this->actingAs($user)->post($finalize)->assertInvalid(['finalize']);
+        $this->assertTrue($stockOpname->fresh()->isDraft());
+
+        $item = $stockOpname->items()->create(['product_id' => $product->id, 'system_stock' => 10]);
+        $this->post($finalize)->assertInvalid(['finalize']);
+        $this->assertTrue($stockOpname->fresh()->isDraft());
+
+        $this->patch(route('stock-opnames.items.update', [$stockOpname, $item]), [
+            'physical_stock' => 0,
+            'adjustment_reason' => 'Tidak ada stok fisik',
+        ])->assertValid();
+        $this->post($finalize)->assertValid();
+        $this->assertSame('finalized', $stockOpname->fresh()->status);
     }
 
     public function test_finalize_rejects_difference_without_reason(): void

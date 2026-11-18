@@ -15,7 +15,7 @@ class StoreStockOpnameRequest extends FormRequest
     {
         return [
             'notes' => ['nullable', 'string', 'max:1000'],
-            'warehouse_id' => ['nullable', 'integer', 'exists:warehouses,id'],
+            'warehouse_id' => ['required', 'integer', 'exists:warehouses,id'],
         ];
     }
 }
