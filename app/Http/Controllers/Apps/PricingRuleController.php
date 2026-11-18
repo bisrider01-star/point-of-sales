@@ -267,6 +267,8 @@ class PricingRuleController extends Controller
 
     private function validateRule(Request $request): array
     {
+        $onlyFor = fn (string $kind) => 'exclude_unless:kind,'.$kind;
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'kind' => ['required', Rule::in([
@@ -297,32 +299,34 @@ class PricingRuleController extends Controller
                 PricingRule::TYPE_FIXED_AMOUNT,
                 PricingRule::TYPE_FIXED_PRICE,
             ])],
-            'discount_value' => ['required', 'numeric', 'min:0.01'],
+            // Buy X Get Y discounts come from its items; the value is forced to 0 below.
+            'discount_value' => ['exclude_if:kind,'.PricingRule::KIND_BUY_X_GET_Y, 'required', 'numeric', 'min:0.01'],
             'preview_quantity_multiplier' => ['nullable', 'integer', 'min:1'],
             'starts_at' => ['nullable', 'date'],
             'ends_at' => ['nullable', 'date', 'after_or_equal:starts_at'],
             'notes' => ['nullable', 'string', 'max:1000'],
-            'qty_breaks' => ['nullable', 'array'],
-            'qty_breaks.*.min_qty' => ['required_with:qty_breaks', 'integer', 'min:1'],
-            'qty_breaks.*.discount_type' => ['required_with:qty_breaks', Rule::in([
+            // The form always posts every item list; only validate the one the selected kind uses.
+            'qty_breaks' => [$onlyFor(PricingRule::KIND_QTY_BREAK), 'nullable', 'array'],
+            'qty_breaks.*.min_qty' => [$onlyFor(PricingRule::KIND_QTY_BREAK), 'required_with:qty_breaks', 'integer', 'min:1'],
+            'qty_breaks.*.discount_type' => [$onlyFor(PricingRule::KIND_QTY_BREAK), 'required_with:qty_breaks', Rule::in([
                 PricingRule::TYPE_PERCENTAGE,
                 PricingRule::TYPE_FIXED_AMOUNT,
                 PricingRule::TYPE_FIXED_PRICE,
             ])],
-            'qty_breaks.*.discount_value' => ['required_with:qty_breaks', 'numeric', 'min:0.01'],
-            'qty_breaks.*.sort_order' => ['nullable', 'integer', 'min:0'],
-            'bundle_items' => ['nullable', 'array'],
-            'bundle_items.*.product_id' => ['required_with:bundle_items', 'integer', 'exists:products,id'],
-            'bundle_items.*.quantity' => ['required_with:bundle_items', 'integer', 'min:1'],
-            'bundle_items.*.sort_order' => ['nullable', 'integer', 'min:0'],
-            'buy_get_items' => ['nullable', 'array'],
-            'buy_get_items.*.product_id' => ['required_with:buy_get_items', 'integer', 'exists:products,id'],
-            'buy_get_items.*.role' => ['required_with:buy_get_items', Rule::in([
+            'qty_breaks.*.discount_value' => [$onlyFor(PricingRule::KIND_QTY_BREAK), 'required_with:qty_breaks', 'numeric', 'min:0.01'],
+            'qty_breaks.*.sort_order' => [$onlyFor(PricingRule::KIND_QTY_BREAK), 'nullable', 'integer', 'min:0'],
+            'bundle_items' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), 'nullable', 'array'],
+            'bundle_items.*.product_id' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), 'required_with:bundle_items', 'integer', 'exists:products,id'],
+            'bundle_items.*.quantity' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), 'required_with:bundle_items', 'integer', 'min:1'],
+            'bundle_items.*.sort_order' => [$onlyFor(PricingRule::KIND_BUNDLE_PRICE), 'nullable', 'integer', 'min:0'],
+            'buy_get_items' => [$onlyFor(PricingRule::KIND_BUY_X_GET_Y), 'nullable', 'array'],
+            'buy_get_items.*.product_id' => [$onlyFor(PricingRule::KIND_BUY_X_GET_Y), 'required_with:buy_get_items', 'integer', 'exists:products,id'],
+            'buy_get_items.*.role' => [$onlyFor(PricingRule::KIND_BUY_X_GET_Y), 'required_with:buy_get_items', Rule::in([
                 PricingRuleBuyGetItem::ROLE_BUY,
                 PricingRuleBuyGetItem::ROLE_GET,
             ])],
-            'buy_get_items.*.quantity' => ['required_with:buy_get_items', 'integer', 'min:1'],
-            'buy_get_items.*.sort_order' => ['nullable', 'integer', 'min:0'],
+            'buy_get_items.*.quantity' => [$onlyFor(PricingRule::KIND_BUY_X_GET_Y), 'required_with:buy_get_items', 'integer', 'min:1'],
+            'buy_get_items.*.sort_order' => [$onlyFor(PricingRule::KIND_BUY_X_GET_Y), 'nullable', 'integer', 'min:0'],
         ]);
 
         if ($validated['target_type'] === PricingRule::TARGET_PRODUCT && empty($validated['product_id'])) {
@@ -360,7 +364,7 @@ class PricingRuleController extends Controller
 
         if (
             $validated['discount_type'] === PricingRule::TYPE_PERCENTAGE
-            && (float) $validated['discount_value'] > 100
+            && (float) ($validated['discount_value'] ?? 0) > 100
         ) {
             $request->validate(['discount_value' => ['max:100']]);
         }

@@ -29,9 +29,9 @@ const discountTypeOptions = [
     { value: "fixed_price", label: "Harga Final" },
 ];
 
-function InputError({ message }) {
+function InputError({ message, className = "" }) {
     if (!message) return null;
-    return <p className="mt-1 text-xs text-rose-500">{message}</p>;
+    return <p className={`mt-1 text-xs text-rose-500 ${className}`}>{message}</p>;
 }
 
 function CardSection({ title, description, children }) {
@@ -146,6 +146,15 @@ export default function Form({
             data[key].filter((_, currentIndex) => currentIndex !== index)
         );
     };
+
+    // Errors for list rows arrive as "qty_breaks.0.discount_value"; collect them per row.
+    const rowError = (key, index) =>
+        Object.entries(errors)
+            .filter(([field]) => field.startsWith(`${key}.${index}.`))
+            .map(([, message]) => message)
+            .join(" ");
+
+    const errorMessages = [...new Set(Object.values(errors))];
 
     const runPreview = async () => {
         setPreviewState({ loading: true, data: null });
@@ -497,6 +506,10 @@ export default function Form({
                                         >
                                             <IconTrash size={16} />
                                         </button>
+                                        <InputError
+                                            className="md:col-span-full"
+                                            message={rowError("qty_breaks", index)}
+                                        />
                                     </div>
                                 ))}
                                 <button
@@ -537,6 +550,7 @@ export default function Form({
                                     }
                                     className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                                 />
+                                <InputError message={errors.discount_value} />
                             </div>
                             <div className="space-y-3">
                                 {data.bundle_items.map((row, index) => (
@@ -585,6 +599,10 @@ export default function Form({
                                         >
                                             <IconTrash size={16} />
                                         </button>
+                                        <InputError
+                                            className="md:col-span-full"
+                                            message={rowError("bundle_items", index)}
+                                        />
                                     </div>
                                 ))}
                                 <button
@@ -601,6 +619,7 @@ export default function Form({
                                     <IconPlus size={16} />
                                     Tambah Item Bundle
                                 </button>
+                                <InputError message={errors.bundle_items} />
                             </div>
                         </CardSection>
                     )}
@@ -671,6 +690,10 @@ export default function Form({
                                         >
                                             <IconTrash size={16} />
                                         </button>
+                                        <InputError
+                                            className="md:col-span-full"
+                                            message={rowError("buy_get_items", index)}
+                                        />
                                     </div>
                                 ))}
                                 <button
@@ -688,6 +711,7 @@ export default function Form({
                                     <IconPlus size={16} />
                                     Tambah Item Buy/Get
                                 </button>
+                                <InputError message={errors.buy_get_items} />
                             </div>
                         </CardSection>
                     )}
@@ -820,6 +844,22 @@ export default function Form({
                             </div>
                         )}
                     </CardSection>
+
+                    {errorMessages.length > 0 && (
+                        <div
+                            role="alert"
+                            className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300"
+                        >
+                            <p className="font-medium">
+                                Rule belum tersimpan. Periksa isian berikut:
+                            </p>
+                            <ul className="mt-1 list-disc pl-5">
+                                {errorMessages.map((message) => (
+                                    <li key={message}>{message}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
 
                     <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
                         <Button

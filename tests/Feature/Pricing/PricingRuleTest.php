@@ -364,6 +364,171 @@ class PricingRuleTest extends TestCase
         $this->assertSame(23, $product->fresh()->stock);
     }
 
+    public function test_standard_discount_saves_when_form_posts_unused_item_lists(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access', 'pricing-rules-create']);
+
+        $this->actingAs($user)
+            ->post(route('pricing-rules.store'), $this->formPayload([
+                'name' => 'Diskon Semua Produk',
+                'discount_type' => 'percentage',
+                'discount_value' => '10',
+            ]))
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('pricing-rules.index'));
+
+        $rule = PricingRule::where('name', 'Diskon Semua Produk')->firstOrFail();
+        $this->assertSame(PricingRule::KIND_STANDARD_DISCOUNT, $rule->kind);
+        $this->assertSame(0, $rule->qtyBreaks()->count());
+        $this->assertSame(0, $rule->bundleItems()->count());
+        $this->assertSame(0, $rule->buyGetItems()->count());
+    }
+
+    public function test_qty_break_saves_when_form_posts_unused_item_lists(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access', 'pricing-rules-create']);
+
+        $this->actingAs($user)
+            ->post(route('pricing-rules.store'), $this->formPayload([
+                'name' => 'Grosir Tiga',
+                'kind' => PricingRule::KIND_QTY_BREAK,
+                'discount_value' => '1',
+                'qty_breaks' => [
+                    ['min_qty' => '3', 'discount_type' => 'fixed_price', 'discount_value' => '50000', 'sort_order' => '0'],
+                ],
+            ]))
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('pricing-rules.index'));
+
+        $rule = PricingRule::where('name', 'Grosir Tiga')->firstOrFail();
+        $this->assertSame(1, $rule->qtyBreaks()->count());
+        $this->assertSame(0, $rule->bundleItems()->count());
+    }
+
+    public function test_bundle_price_saves_when_form_posts_unused_item_lists(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access', 'pricing-rules-create']);
+        $productA = $this->createProduct('Bundle Form A');
+        $productB = $this->createProduct('Bundle Form B');
+
+        $this->actingAs($user)
+            ->post(route('pricing-rules.store'), $this->formPayload([
+                'name' => 'Paket Hemat',
+                'kind' => PricingRule::KIND_BUNDLE_PRICE,
+                'discount_value' => '100000',
+                'bundle_items' => [
+                    ['product_id' => (string) $productA->id, 'quantity' => '1', 'sort_order' => '0'],
+                    ['product_id' => (string) $productB->id, 'quantity' => '1', 'sort_order' => '1'],
+                ],
+            ]))
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('pricing-rules.index'));
+
+        $rule = PricingRule::where('name', 'Paket Hemat')->firstOrFail();
+        $this->assertSame(PricingRule::TYPE_FIXED_PRICE, $rule->discount_type);
+        $this->assertSame(2, $rule->bundleItems()->count());
+        $this->assertSame(0, $rule->qtyBreaks()->count());
+    }
+
+    public function test_buy_x_get_y_saves_without_discount_value(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access', 'pricing-rules-create']);
+        $buyProduct = $this->createProduct('Beli Form');
+        $getProduct = $this->createProduct('Gratis Form');
+
+        $this->actingAs($user)
+            ->post(route('pricing-rules.store'), $this->formPayload([
+                'name' => 'Beli 1 Gratis 1',
+                'kind' => PricingRule::KIND_BUY_X_GET_Y,
+                'discount_value' => '',
+                'buy_get_items' => [
+                    ['product_id' => (string) $buyProduct->id, 'role' => 'buy', 'quantity' => '1', 'sort_order' => '0'],
+                    ['product_id' => (string) $getProduct->id, 'role' => 'get', 'quantity' => '1', 'sort_order' => '1'],
+                ],
+            ]))
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('pricing-rules.index'));
+
+        $rule = PricingRule::where('name', 'Beli 1 Gratis 1')->firstOrFail();
+        $this->assertSame(0.0, $rule->discount_value);
+        $this->assertSame(2, $rule->buyGetItems()->count());
+    }
+
+    public function test_bundle_with_only_one_product_is_rejected(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access', 'pricing-rules-create']);
+        $product = $this->createProduct('Single Bundle');
+
+        $this->actingAs($user)
+            ->post(route('pricing-rules.store'), $this->formPayload([
+                'name' => 'Single Bundle',
+                'kind' => PricingRule::KIND_BUNDLE_PRICE,
+                'discount_type' => 'fixed_price',
+                'discount_value' => '50000',
+                'bundle_items' => [
+                    ['product_id' => $product->id, 'quantity' => '1', 'sort_order' => '0'],
+                ],
+            ]))
+            ->assertSessionHasErrors('bundle_items');
+
+        $this->assertDatabaseMissing('pricing_rules', ['name' => 'Single Bundle']);
+    }
+
+    public function test_incomplete_items_for_selected_kind_are_still_rejected(): void
+    {
+        $user = $this->createUserWithPermissions(['pricing-rules-access', 'pricing-rules-create']);
+        $product = $this->createProduct('Bundle Kurang');
+
+        $this->actingAs($user)
+            ->post(route('pricing-rules.store'), $this->formPayload([
+                'name' => 'Bundle Tidak Lengkap',
+                'kind' => PricingRule::KIND_BUNDLE_PRICE,
+                'discount_value' => '100000',
+                'bundle_items' => [
+                    ['product_id' => (string) $product->id, 'quantity' => '1', 'sort_order' => '0'],
+                    ['product_id' => '', 'quantity' => '1', 'sort_order' => '1'],
+                ],
+            ]))
+            ->assertSessionHasErrors('bundle_items.1.product_id');
+
+        $this->assertDatabaseMissing('pricing_rules', ['name' => 'Bundle Tidak Lengkap']);
+    }
+
+    /**
+     * Mirrors the create form, which always posts every item list with its blank default rows.
+     */
+    private function formPayload(array $overrides): array
+    {
+        return array_merge([
+            'name' => 'Promo Form',
+            'kind' => PricingRule::KIND_STANDARD_DISCOUNT,
+            'is_active' => true,
+            'priority' => '100',
+            'target_type' => 'all',
+            'product_id' => '',
+            'category_id' => '',
+            'customer_scope' => 'all',
+            'eligible_loyalty_tiers' => [],
+            'discount_type' => 'percentage',
+            'discount_value' => '',
+            'preview_quantity_multiplier' => '1',
+            'starts_at' => '',
+            'ends_at' => '',
+            'notes' => '',
+            'qty_breaks' => [
+                ['min_qty' => '3', 'discount_type' => 'fixed_price', 'discount_value' => '', 'sort_order' => '0'],
+            ],
+            'bundle_items' => [
+                ['product_id' => '', 'quantity' => '1', 'sort_order' => '0'],
+                ['product_id' => '', 'quantity' => '1', 'sort_order' => '1'],
+            ],
+            'buy_get_items' => [
+                ['product_id' => '', 'role' => 'buy', 'quantity' => '1', 'sort_order' => '0'],
+                ['product_id' => '', 'role' => 'get', 'quantity' => '1', 'sort_order' => '1'],
+            ],
+        ], $overrides);
+    }
+
     private function createUserWithPermissions(array $permissions): User
     {
         $user = User::factory()->create();
